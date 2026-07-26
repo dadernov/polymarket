@@ -3,6 +3,7 @@
 import type { MouseEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/empty-state";
 import { ProbabilityBar } from "@/components/ui/probability-ring";
 import { formatCents, formatProbability } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,12 @@ export interface OutcomeRowProps {
   /** Без обработчика строка становится «только для чтения». */
   onBuy?: (side: OutcomeSide) => void;
   disabled?: boolean;
+  /**
+   * Какая сторона сейчас переходит на страницу события — переход по клику не
+   * мгновенный (полноценный переход по маршруту), без этого кнопка выглядит
+   * так, будто клик не сработал.
+   */
+  loadingSide?: OutcomeSide | null;
   className?: string;
 }
 
@@ -47,6 +54,7 @@ export function OutcomeRow({
   settled = false,
   onBuy,
   disabled = false,
+  loadingSide = null,
   className,
 }: OutcomeRowProps) {
   // Цена второго исхода приходит из самого рынка; дополнение до единицы —
@@ -100,24 +108,24 @@ export function OutcomeRow({
           <Button
             variant="yes"
             size="xs"
-            disabled={disabled}
+            disabled={disabled || loadingSide === "yes"}
             onClick={handle("yes")}
             title={`${yesLabel} · ${formatCents(price, 0)}`}
             aria-label={`${yesLabel} по ${formatCents(price, 0)}`}
             className="tnum h-7 px-2 text-[11px]"
           >
-            {formatCents(price, 0)}
+            {loadingSide === "yes" ? <Spinner className="size-3" /> : formatCents(price, 0)}
           </Button>
           <Button
             variant="no"
             size="xs"
-            disabled={disabled}
+            disabled={disabled || loadingSide === "no"}
             onClick={handle("no")}
             title={`${noLabel} · ${formatCents(against, 0)}`}
             aria-label={`${noLabel} по ${formatCents(against, 0)}`}
             className="tnum h-7 px-2 text-[11px]"
           >
-            {formatCents(against, 0)}
+            {loadingSide === "no" ? <Spinner className="size-3" /> : formatCents(against, 0)}
           </Button>
         </div>
       )}

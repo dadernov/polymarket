@@ -3,9 +3,10 @@
 import { MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { MouseEvent } from "react";
+import { type MouseEvent, useState, useTransition } from "react";
 import { Badge, ChangeBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/empty-state";
 import { MarketImage } from "@/components/ui/market-image";
 import { ProbabilityRing } from "@/components/ui/probability-ring";
 import {
@@ -78,6 +79,11 @@ export interface EventCardProps {
  */
 export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  // Переход на страницу события — это полноценная навигация, а не мгновенное
+  // локальное состояние: без спиннера на нажатой кнопке клик выглядит так,
+  // будто ничего не произошло секунду-другую.
+  const [pendingTokenId, setPendingTokenId] = useState<string | null>(null);
   const primary = event.markets[0];
   if (!primary) return null;
 
@@ -87,8 +93,13 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
       onQuickBuy(event, market, outcome);
       return;
     }
-    router.push(quickBuyHref(event.slug, outcome.tokenId));
+    setPendingTokenId(outcome.tokenId);
+    startTransition(() => {
+      router.push(quickBuyHref(event.slug, outcome.tokenId));
+    });
   };
+
+  const loadingTokenId = isPending ? pendingTokenId : null;
 
   const binary = event.isBinary;
   // Взаимоисключающие рынки отвечают на один вопрос и выстраиваются в рейтинг.
@@ -160,27 +171,39 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
             variant="yes"
             size="sm"
             fullWidth
-            disabled={locked || !yes}
+            disabled={locked || !yes || loadingTokenId === yes?.tokenId}
             onClick={stop(() => buy(primary, yes))}
             title={`Buy ${yes?.label ?? "Yes"} · ${formatCents(yes?.price ?? 0, 0)}`}
             className="h-9 px-2.5"
           >
-            {/* Название исхода усекается, цена — никогда: столбец цен должен
-                читаться при любой длине подписи вроде «Ninjas in Pyjamas». */}
-            <span className="truncate">{yes?.label ?? "Yes"}</span>
-            <span className="tnum shrink-0">{formatCents(yes?.price ?? 0, 0)}</span>
+            {loadingTokenId && loadingTokenId === yes?.tokenId ? (
+              <Spinner className="size-3.5" />
+            ) : (
+              <>
+                {/* Название исхода усекается, цена — никогда: столбец цен
+                    должен читаться при любой длине подписи. */}
+                <span className="truncate">{yes?.label ?? "Yes"}</span>
+                <span className="tnum shrink-0">{formatCents(yes?.price ?? 0, 0)}</span>
+              </>
+            )}
           </Button>
           <Button
             variant="no"
             size="sm"
             fullWidth
-            disabled={locked || !no}
+            disabled={locked || !no || loadingTokenId === no?.tokenId}
             onClick={stop(() => buy(primary, no))}
             title={`Buy ${no?.label ?? "No"} · ${formatCents(no?.price ?? 0, 0)}`}
             className="h-9 px-2.5"
           >
-            <span className="truncate">{no?.label ?? "No"}</span>
-            <span className="tnum shrink-0">{formatCents(no?.price ?? 0, 0)}</span>
+            {loadingTokenId && loadingTokenId === no?.tokenId ? (
+              <Spinner className="size-3.5" />
+            ) : (
+              <>
+                <span className="truncate">{no?.label ?? "No"}</span>
+                <span className="tnum shrink-0">{formatCents(no?.price ?? 0, 0)}</span>
+              </>
+            )}
           </Button>
         </div>
       ) : (
@@ -198,6 +221,13 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
             const settled = !exclusive && isSettled(market);
             const onBuy = (side: OutcomeSide) =>
               buy(market, side === "yes" ? market.outcomes[0] : market.outcomes[1]);
+            const rowLoadingSide: OutcomeSide | null = !loadingTokenId
+              ? null
+              : loadingTokenId === market.outcomes[0]?.tokenId
+                ? "yes"
+                : loadingTokenId === market.outcomes[1]?.tokenId
+                  ? "no"
+                  : null;
             return (
               <OutcomeRow
                 key={market.id}
@@ -209,6 +239,7 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
                 noLabel={market.outcomes[1]?.label ?? "No"}
                 settled={settled}
                 disabled={event.closed || market.closed || !market.acceptingOrders}
+                loadingSide={rowLoadingSide}
                 onBuy={onBuy}
               />
             );

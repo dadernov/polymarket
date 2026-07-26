@@ -2,8 +2,9 @@
 
 import { ChevronDown } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useState, useTransition } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/empty-state";
 import type { EventSort } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -29,42 +30,67 @@ function currentSort(value: string | null): EventSort {
 const CONTROL =
   "flex h-9 shrink-0 items-center rounded-xl border text-[13px] font-medium transition-colors";
 
-/** Обновление одного параметра в адресной строке с сохранением остальных. */
+/**
+ * Обновление одного параметра в адресной строке с сохранением остальных.
+ * Смена фильтра — серверный переход (страница перечитывает searchParams и
+ * заново идёт за данными), а не мгновенное состояние: `isPending` даёт
+ * компонентам показать это явно, вместо замороженного на секунду интерфейса.
+ */
 function useParamWriter() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
-  return (key: string, value: string | null) => {
+  const write = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
     if (value === null) params.delete(key);
     else params.set(key, value);
     // Смена фильтра всегда возвращает ленту в начало.
     params.delete("offset");
     const qs = params.toString();
-    router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+    startTransition(() => {
+      router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+    });
   };
+
+  return { write, isPending };
 }
 
 function SortSelectInner({ className }: { className?: string }) {
   const searchParams = useSearchParams();
-  const write = useParamWriter();
-  const current = currentSort(searchParams.get("sort"));
+  const { write, isPending } = useParamWriter();
+  const urlSort = currentSort(searchParams.get("sort"));
+  // Нативный <select> — управляемый компонент: если не обновить его value
+  // сразу, React откатит выбранный пункт обратно, пока не придёт ответ
+  // сервера, и переключение будет выглядеть так, будто оно не сработало.
+  const [optimisticSort, setOptimisticSort] = useState<EventSort | null>(null);
+  // Сброс во время рендера, а не в эффекте: как только сортировка в адресе
+  // реально поменялась, оптимистичное значение больше не нужно.
+  const [prevUrlSort, setPrevUrlSort] = useState(urlSort);
+  if (urlSort !== prevUrlSort) {
+    setPrevUrlSort(urlSort);
+    setOptimisticSort(null);
+  }
+  const current = optimisticSort ?? urlSort;
 
   return (
     <label
       className={cn(
         CONTROL,
-        "relative border-border bg-surface pl-3 pr-8 text-text hover:border-border-strong",
+        "relative border-border bg-surface pl-3 pr-8 text-text transition-opacity hover:border-border-strong",
+        isPending && "opacity-60",
         className,
       )}
     >
       <span className="sr-only">Сортировка</span>
       <select
         value={current}
-        onChange={(event) =>
-          write("sort", event.target.value === DEFAULT_SORT ? null : event.target.value)
-        }
+        onChange={(event) => {
+          const next = event.target.value as EventSort;
+          setOptimisticSort(next);
+          write("sort", next === DEFAULT_SORT ? null : next);
+        }}
         className="cursor-pointer appearance-none bg-transparent pr-1 text-[13px] font-medium text-text outline-none"
       >
         {SORT_OPTIONS.map((option) => (
@@ -73,7 +99,11 @@ function SortSelectInner({ className }: { className?: string }) {
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 size-4 text-faint" aria-hidden />
+      {isPending ? (
+        <Spinner className="pointer-events-none absolute right-2.5 size-3.5 text-faint" />
+      ) : (
+        <ChevronDown className="pointer-events-none absolute right-2.5 size-4 text-faint" aria-hidden />
+      )}
     </label>
   );
 }
@@ -89,21 +119,33 @@ export function SortSelect({ className }: { className?: string }) {
 
 function ClosedToggleInner({ className }: { className?: string }) {
   const searchParams = useSearchParams();
-  const write = useParamWriter();
-  const closed = searchParams.get("closed") === "true";
+  const { write, isPending } = useParamWriter();
+  const urlClosed = searchParams.get("closed") === "true";
+  const [optimisticClosed, setOptimisticClosed] = useState<boolean | null>(null);
+  // Сброс во время рендера, а не в эффекте — см. комментарий в SortSelectInner.
+  const [prevUrlClosed, setPrevUrlClosed] = useState(urlClosed);
+  if (urlClosed !== prevUrlClosed) {
+    setPrevUrlClosed(urlClosed);
+    setOptimisticClosed(null);
+  }
+  const closed = optimisticClosed ?? urlClosed;
 
   return (
     <button
       type="button"
       role="switch"
       aria-checked={closed}
-      onClick={() => write("closed", closed ? null : "true")}
+      onClick={() => {
+        setOptimisticClosed(!closed);
+        write("closed", closed ? null : "true");
+      }}
       className={cn(
         CONTROL,
-        "cursor-pointer gap-2 px-3",
+        "cursor-pointer gap-2 px-3 transition-opacity",
         closed
           ? "border-accent bg-accent-soft text-accent"
           : "border-border bg-surface text-muted hover:border-border-strong hover:text-text",
+        isPending && "opacity-60",
         className,
       )}
     >
@@ -122,6 +164,7 @@ function ClosedToggleInner({ className }: { className?: string }) {
         />
       </span>
       Завершённые
+      {isPending && <Spinner className="size-3.5" />}
     </button>
   );
 }

@@ -2,11 +2,19 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { api, queryKeys } from "@/lib/api";
 import type { Tag } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/empty-state";
 import { Container } from "./container";
 
 const ALL: Tag = { id: "all", label: "All", slug: "all" };
@@ -32,8 +40,22 @@ function CategoryBarInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const rowRef = useRef<HTMLDivElement>(null);
+  const [isPending, startTransition] = useTransition();
 
-  const active = searchParams.get("tag") ?? "all";
+  const urlActive = searchParams.get("tag") ?? "all";
+  // Смена категории — это серверный переход, не мгновенное состояние: пока
+  // страница не перерендерилась (может занимать больше секунды), подсвечиваем
+  // нажатый чип оптимистично, иначе клик выглядит так, будто ничего не вышло.
+  const [optimistic, setOptimistic] = useState<string | null>(null);
+  // Сброс во время рендера, а не в эффекте: как только реальный tag в адресе
+  // изменился (переход завершился или сработала кнопка «назад»), оптимистичное
+  // значение уже не нужно — react-hooks/set-state-in-effect requires this.
+  const [prevUrlActive, setPrevUrlActive] = useState(urlActive);
+  if (urlActive !== prevUrlActive) {
+    setPrevUrlActive(urlActive);
+    setOptimistic(null);
+  }
+  const active = optimistic ?? urlActive;
 
   const { data } = useQuery({
     queryKey: queryKeys.tags(),
@@ -64,20 +86,28 @@ function CategoryBarInner() {
   }, [active, chips.length]);
 
   const select = (slug: string) => {
+    if (slug === active) return;
+    setOptimistic(slug);
     const params = new URLSearchParams(searchParams.toString());
     if (slug === "all") params.delete("tag");
     else params.set("tag", slug);
     params.delete("offset");
     const qs = params.toString();
-    router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+    startTransition(() => {
+      router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+    });
   };
 
   return (
     <div className={SHELL}>
       <Container>
-        <div ref={rowRef} className={ROW}>
+        <div
+          ref={rowRef}
+          className={cn(ROW, "transition-opacity", isPending && "opacity-60")}
+        >
           {chips.map((tag) => {
             const isActive = tag.slug === active;
+            const isLoadingThis = isPending && isActive && tag.slug !== urlActive;
             return (
               <button
                 key={tag.id}
@@ -86,7 +116,7 @@ function CategoryBarInner() {
                 aria-pressed={isActive}
                 onClick={() => select(tag.slug)}
                 className={cn(
-                  "h-8 shrink-0 cursor-pointer rounded-full border px-3.5",
+                  "flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3.5",
                   "text-[13px] font-medium transition-colors",
                   isActive
                     ? "border-transparent bg-text text-bg"
@@ -94,6 +124,9 @@ function CategoryBarInner() {
                 )}
               >
                 {tag.label}
+                {isLoadingThis && (
+                  <Spinner className="size-3 text-bg" aria-hidden />
+                )}
               </button>
             );
           })}
