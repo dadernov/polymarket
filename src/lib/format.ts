@@ -39,16 +39,36 @@ export function formatSignedMoney(value: number | null | undefined, digits = 2):
   return `${sign}${formatMoney(Math.abs(value), digits)}`;
 }
 
-/** Цена 0..1 → целые проценты: `62%`. Основная подача вероятности. */
+/**
+ * Цена 0..1 → целые проценты: `62%`. Основная подача вероятности.
+ *
+ * Границы 100% и 0% оставлены только точным 1 и 0 — это действительно
+ * решённый рынок. Живой рынок на 99.6¢ округлялся бы до «100%» и выглядел
+ * бы решённым, хотя на нём остаётся доходность, поэтому такие цены
+ * показываем как `>99%` / `<1%`.
+ */
 export function formatProbability(price: number | null | undefined): string {
   if (price == null || !Number.isFinite(price)) return "—";
-  return `${Math.round(clamp01(price) * 100)}%`;
+  const p = clamp01(price);
+  const pct = Math.round(p * 100);
+  if (pct === 100 && p < 1) return ">99%";
+  if (pct === 0 && p > 0) return "<1%";
+  return `${pct}%`;
 }
 
 /** Цена 0..1 → центы: `62.4¢`. Используется в стакане и панели сделки. */
 export function formatCents(price: number | null | undefined, digits = 1): string {
   if (price == null || !Number.isFinite(price)) return "—";
-  return `${(clamp01(price) * 100).toFixed(digits)}¢`;
+  const p = clamp01(price);
+  // Округлённая до целых цена — витринная (кнопки карточек), и к ней
+  // применимо то же правило границ, что и к formatProbability.
+  if (digits === 0) {
+    const cents = Math.round(p * 100);
+    if (cents === 100 && p < 1) return ">99¢";
+    if (cents === 0 && p > 0) return "<1¢";
+    return `${cents}¢`;
+  }
+  return `${(p * 100).toFixed(digits)}¢`;
 }
 
 /** Изменение в процентных пунктах: `+4.2` / `-1.0`. */

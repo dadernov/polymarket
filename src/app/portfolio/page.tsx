@@ -1,21 +1,31 @@
 "use client";
 
 import { useQueries } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Container } from "@/components/layout/container";
 import { HistoryTable } from "@/components/portfolio/history-table";
+import { LeverageTable } from "@/components/portfolio/leverage-table";
 import { PnlChart } from "@/components/portfolio/pnl-chart";
 import { PortfolioSummary } from "@/components/portfolio/portfolio-summary";
 import { PositionsTable } from "@/components/portfolio/positions-table";
 import { Tabs } from "@/components/ui/tabs";
 import { api, queryKeys, REFRESH } from "@/lib/api";
-import { useHydrated, usePortfolioStore, type Fill, type Position } from "@/lib/store";
+import {
+  useHydrated,
+  useLeverage,
+  useLeverageHydrated,
+  usePortfolioStore,
+  type Fill,
+  type LeveragePosition,
+  type Position,
+} from "@/lib/store";
 import type { MarketEvent } from "@/lib/types";
 
-type Tab = "positions" | "history";
+type Tab = "positions" | "leverage" | "history";
 
 /** Стабильные пустышки: до гидратации нельзя показывать сохранённые данные. */
 const NO_POSITIONS: Position[] = [];
+const NO_LEVERAGE: LeveragePosition[] = [];
 const NO_FILLS: Fill[] = [];
 
 /**
@@ -27,16 +37,11 @@ const NO_FILLS: Fill[] = [];
  * тогда как `/api/book` пришлось бы дёргать на каждый исход отдельно).
  * `outcome.price` — та же середина рынка; если цены нет, вызывающий код
  * откатывается на avgPrice.
+ *
+ * Ключи запросов те же, что у <LeverageTable/>, — сеть от общего списка слагов
+ * не нагружается, зато сводка видит цены и по плечевым позициям.
  */
-function usePositionMarks(positions: Position[]): Record<string, number> {
-  const slugs = useMemo(() => {
-    const unique = new Set<string>();
-    for (const position of positions) {
-      if (position.eventSlug) unique.add(position.eventSlug);
-    }
-    return [...unique].sort();
-  }, [positions]);
-
+function useEventMarks(slugs: string[]): Record<string, number> {
   const results = useQueries({
     queries: slugs.map((slug) => ({
       queryKey: queryKeys.event(slug),
@@ -63,13 +68,39 @@ export default function PortfolioPage() {
   const positionsMap = usePortfolioStore((s) => s.positions);
   const fills = usePortfolioStore((s) => s.fills);
   const hydrated = useHydrated();
+
+  const leverageMap = useLeverage((s) => s.positions);
+  const markPrices = useLeverage((s) => s.markPrices);
+  const leverageHydrated = useLeverageHydrated();
+
   const [tab, setTab] = useState<Tab>("positions");
 
   // Новый массив на каждый рендер сломал бы getSnapshot стора — мемоизируем.
   const stored = useMemo(() => Object.values(positionsMap), [positionsMap]);
+  const storedLeverage = useMemo(() => Object.values(leverageMap), [leverageMap]);
   const positions = hydrated ? stored : NO_POSITIONS;
+  const leveragePositions = leverageHydrated ? storedLeverage : NO_LEVERAGE;
   const visibleFills = hydrated ? fills : NO_FILLS;
-  const marks = usePositionMarks(positions);
+
+  const slugs = useMemo(() => {
+    const unique = new Set<string>();
+    for (const position of positions) {
+      if (position.eventSlug) unique.add(position.eventSlug);
+    }
+    for (const position of leveragePositions) {
+      if (position.eventSlug) unique.add(position.eventSlug);
+    }
+    return [...unique].sort();
+  }, [positions, leveragePositions]);
+
+  const marks = useEventMarks(slugs);
+
+  // Сгоревшие позиции нужно помечать и с закрытой вкладкой «Плечо», иначе
+  // сводка считает сгоревшую маржу живой. Вызов идемпотентен и без изменений
+  // не дёргает подписчиков.
+  useEffect(() => {
+    markPrices(marks);
+  }, [marks, markPrices]);
 
   return (
     <Container className="py-6 lg:py-8">
@@ -92,16 +123,18 @@ export default function PortfolioPage() {
           onChange={setTab}
           items={[
             { value: "positions", label: "Позиции", count: positions.length },
+            { value: "leverage", label: "Плечо", count: leveragePositions.length },
             { value: "history", label: "История", count: visibleFills.length },
           ]}
         />
 
         <div className="mt-4">
-          {tab === "positions" ? (
+          {tab === "positions" && (
             <PositionsTable positions={positions} marks={marks} loading={!hydrated} />
-          ) : (
-            <HistoryTable fills={visibleFills} loading={!hydrated} />
           )}
+          {/* Таблица плеча самодостаточна: свои позиции, цены и гидратацию берёт сама. */}
+          {tab === "leverage" && <LeverageTable />}
+          {tab === "history" && <HistoryTable fills={visibleFills} loading={!hydrated} />}
         </div>
       </div>
     </Container>

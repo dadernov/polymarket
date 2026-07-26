@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, LayoutGrid, Star, Trophy, Wallet } from "lucide-react";
+import { Activity, LayoutGrid, Lightbulb, Star, Trophy, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useWatchlistHydrated, useWatchlistStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -23,7 +23,9 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 export function isNavActive(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  if (href === "/") return pathname === "/";
+  // Сравниваем по сегментам: /portfolio не должен подсвечиваться на /portfolio-x.
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function Logo({
@@ -68,10 +70,35 @@ export function Logo({
 }
 
 const FOOTER_LINKS = [
-  { href: "/leaderboard", label: "Рейтинг" },
-  { href: "/activity", label: "Лента сделок" },
+  { href: "/markets", label: "Все рынки" },
   { href: "/?tag=all", label: "Все категории" },
 ];
+
+/** Короткая справка вместо отдельной страницы: три правила, которых хватает новичку. */
+const BASICS = [
+  "Цена исхода — его вероятность: 62¢ означают 62%.",
+  "Верный исход гасится по $1, остальные — по $0.",
+  "Условия резолва — во вкладке «Правила» на странице события.",
+];
+
+function HowItWorks() {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-3">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-text">
+        <Lightbulb className="size-3.5 text-accent" aria-hidden />
+        Как это работает
+      </p>
+      <ul className="mt-1.5 space-y-1 text-[11px] leading-relaxed text-muted">
+        {BASICS.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+      <p className="mt-2 border-t border-border pt-2 text-[11px] leading-relaxed text-faint">
+        Демо-версия: баланс и позиции виртуальные, реальные сделки не проходят.
+      </p>
+    </div>
+  );
+}
 
 /** Блок «Избранное»: счётчик появляется только после гидратации стора. */
 function WatchlistHint() {
@@ -144,8 +171,9 @@ export function Sidebar() {
 
       <div className="mx-4 my-2 h-px bg-border" />
 
-      <div className="px-3">
+      <div className="thin-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-2">
         <WatchlistHint />
+        <HowItWorks />
       </div>
 
       <div className="mt-auto px-3 pb-4">

@@ -74,15 +74,30 @@ function Row({
   );
 }
 
+/** Цена ушла между показом расчёта и кликом по кнопке. */
+export interface PriceAlert {
+  /** Средняя цена, которую пользователь видел. */
+  from: number;
+  /** Средняя цена по текущему стакану. */
+  to: number;
+}
+
 export interface QuoteSummaryProps {
   side: Side;
   quote: Quote | null;
   loading?: boolean;
   /** Ожидаемый реализованный P&L продажи относительно средней позиции. */
   estimatedPnl?: number | null;
+  priceAlert?: PriceAlert | null;
 }
 
-export function QuoteSummary({ side, quote, loading = false, estimatedPnl }: QuoteSummaryProps) {
+export function QuoteSummary({
+  side,
+  quote,
+  loading = false,
+  estimatedPnl,
+  priceAlert,
+}: QuoteSummaryProps) {
   if (loading) {
     return (
       <div className="space-y-2 rounded-xl border border-border bg-bg-subtle p-3">
@@ -155,6 +170,20 @@ export function QuoteSummary({ side, quote, loading = false, estimatedPnl }: Quo
           />
         </div>
       </div>
+
+      {priceAlert && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg bg-[color:var(--warn)]/10 px-2.5 py-2 text-xs text-[color:var(--warn)]"
+        >
+          <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+          <p>
+            Цена изменилась: <span className="tnum font-semibold">{formatCents(priceAlert.from)}</span>{" "}
+            → <span className="tnum font-semibold">{formatCents(priceAlert.to)}</span>. Расчёт выше
+            уже пересчитан — нажмите ещё раз, чтобы исполнить по новой цене.
+          </p>
+        </div>
+      )}
 
       {filled?.partial && (
         <div className="flex items-start gap-2 rounded-lg bg-[color:var(--warn)]/10 px-2.5 py-2 text-xs text-[color:var(--warn)]">

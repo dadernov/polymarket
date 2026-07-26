@@ -12,7 +12,7 @@ export function Footer() {
   return (
     <footer className="mt-10 border-t border-border py-6">
       <Container>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             {LINKS.map((link) => (
               <Link
@@ -24,10 +24,16 @@ export function Footer() {
               </Link>
             ))}
           </div>
-          <p className="text-xs text-faint">
-            Данные: Polymarket public API. Демо-проект, реальные сделки не
-            совершаются.
-          </p>
+          <div className="space-y-1 sm:max-w-md sm:text-right">
+            <p className="text-xs leading-relaxed text-muted">
+              Демонстрационный проект: баланс и позиции виртуальные, реальные
+              сделки не совершаются и заработать здесь нельзя.
+            </p>
+            <p className="text-[11px] leading-relaxed text-faint">
+              Котировки и история — публичный API Polymarket. Материалы сайта не
+              являются инвестиционной рекомендацией.
+            </p>
+          </div>
         </div>
       </Container>
     </footer>

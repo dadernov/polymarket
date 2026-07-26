@@ -149,12 +149,38 @@ function normalizeTag(raw: RawGammaTag): Tag {
   return { id: String(raw.id), label: raw.label, slug: raw.slug };
 }
 
+/** Рынок фактически определился: цена «за» выродилась в 0/1 или торги закрыты. */
+function isSettled(market: Market): boolean {
+  const price = market.outcomes[0]?.price ?? 0;
+  return market.closed || price >= 1 || price <= 0;
+}
+
+/** Взаимоисключающие рынки: чем выше вероятность, тем ближе к лидеру гонки. */
+function byProbability(a: Market, b: Market): number {
+  return (b.outcomes[0]?.price ?? 0) - (a.outcomes[0]?.price ?? 0);
+}
+
+/**
+ * Независимые ставки: вероятность здесь ничего не ранжирует (сумма цен по
+ * событию доходит до 13), поэтому наверх поднимаем самые торгуемые вопросы,
+ * а уже определившиеся уводим вниз — иначе список открывают строки на 100%.
+ */
+function byLiquidity(a: Market, b: Market): number {
+  return (
+    Number(isSettled(a)) - Number(isSettled(b)) ||
+    b.liquidity - a.liquidity ||
+    b.volume24hr - a.volume24hr
+  );
+}
+
 export function normalizeEvent(raw: RawGammaEvent): MarketEvent {
+  // negRisk — точный признак взаимоисключительности рынков события.
+  const exclusive = Boolean(raw.negRisk ?? raw.enableNegRisk);
+
   const markets = (raw.markets ?? [])
     .filter((m) => m && !m.archived)
     .map(normalizeMarket)
-    // Внутри события рынки сортируем по убыванию вероятности — как на Polymarket.
-    .sort((a, b) => (b.outcomes[0]?.price ?? 0) - (a.outcomes[0]?.price ?? 0));
+    .sort(exclusive ? byProbability : byLiquidity);
 
   // Одно событие с одним рынком на два исхода = бинарная карточка Yes/No.
   // showAllOutcomes здесь не участвует: Gamma ставит его почти всем событиям,
@@ -177,7 +203,7 @@ export function normalizeEvent(raw: RawGammaEvent): MarketEvent {
     featured: Boolean(raw.featured),
     isNew: Boolean(raw.new),
     live: Boolean(raw.live),
-    negRisk: Boolean(raw.negRisk ?? raw.enableNegRisk),
+    negRisk: exclusive,
     showAllOutcomes: Boolean(raw.showAllOutcomes),
     volume: toNumber(raw.volume),
     volume24hr: toNumber(raw.volume24hr),
@@ -188,6 +214,7 @@ export function normalizeEvent(raw: RawGammaEvent): MarketEvent {
     markets,
     tags: (raw.tags ?? []).map(normalizeTag),
     isBinary,
+    exclusive,
   };
 }
 

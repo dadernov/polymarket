@@ -25,6 +25,23 @@ export {
 } from "./portfolio";
 
 export {
+  leverageDistanceToKnockout,
+  leveragePositionPnl,
+  leveragePositionReturnPct,
+  leveragePositionValue,
+  leverageTotals,
+  useLeverage,
+  useLeverageHydrated,
+  useLeverageStore,
+  type LeveragePosition,
+  type LeverageResult,
+  type LeverageSide,
+  type LeverageState,
+  type LeverageTotals,
+  type OpenLeverageArgs,
+} from "./leverage";
+
+export {
   useIsWatched,
   useWatchlist,
   useWatchlistHydrated,

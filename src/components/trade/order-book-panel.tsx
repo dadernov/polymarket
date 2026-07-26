@@ -4,12 +4,17 @@
  * Живой стакан CLOB по одному токену: asks сверху вниз до лучшей цены,
  * строка мида со спредом, ниже bids. Глубина показана фоновой заливкой,
  * ширина которой пропорциональна накопленному объёму уровня.
+ *
+ * Панель всегда показывает ИМЕННО выбранный исход: ключ запроса содержит
+ * tokenId, а `staleTime: 0` заставляет перезапросить книгу сразу после
+ * переключения — из кэша не всплывут цифры минутной давности.
  */
 
 import { Layers } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, type ReactNode } from "react";
 
+import { outcomeToneByLabel } from "./outcome-selector";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, Spinner } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,10 +27,22 @@ import { cn } from "@/lib/utils";
 const COLLAPSED_ROWS = 8;
 const EXPANDED_ROWS = 15;
 
+/** Названия, у которых зелёный/красный действительно что-то значат. */
+const SEMANTIC_LABELS = new Set(["yes", "no", "up", "down", "over", "under"]);
+
+/** Для команд и имён цвет не кодирует «за/против» — оставляем нейтральный. */
+function badgeTone(label: string | undefined): "yes" | "no" | "neutral" {
+  const normalized = label?.trim().toLowerCase();
+  if (!normalized || !SEMANTIC_LABELS.has(normalized)) return "neutral";
+  return outcomeToneByLabel(normalized);
+}
+
 export interface OrderBookPanelProps {
   tokenId: string;
   tickSize?: number;
   outcomeLabel?: string;
+  /** Вопрос выбранного рынка — чтобы заголовок не отрывался от контекста. */
+  marketTitle?: string;
   /** Клик по строке отдаёт цену наружу. По умолчанию строки некликабельны. */
   onSelectPrice?: (price: number) => void;
 }
@@ -54,8 +71,8 @@ function BookRow({
       onClick={() => onSelectPrice?.(level.price)}
       title={onSelectPrice ? "Подставить цену в заявку" : undefined}
       className={cn(
-        "relative block w-full cursor-pointer px-3 py-1 text-left",
-        "transition-colors enabled:hover:bg-surface-hover disabled:cursor-default",
+        "relative block w-full px-3 py-1 text-left transition-colors",
+        onSelectPrice ? "cursor-pointer hover:bg-surface-hover" : "cursor-default",
       )}
     >
       <span
@@ -95,17 +112,28 @@ export function OrderBookPanel({
   tokenId,
   tickSize = 0.01,
   outcomeLabel,
+  marketTitle,
   onSelectPrice,
 }: OrderBookPanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const rows = expanded ? EXPANDED_ROWS : COLLAPSED_ROWS;
   const token = tokenId || "";
+
+  // Смена исхода — это другой стакан: глубину раскрытия не переносим.
+  const [prevToken, setPrevToken] = useState(token);
+  if (prevToken !== token) {
+    setPrevToken(token);
+    setExpanded(false);
+  }
+
+  const rows = expanded ? EXPANDED_ROWS : COLLAPSED_ROWS;
 
   const { data, isPending, isError, isFetching } = useQuery({
     queryKey: queryKeys.book(token),
     queryFn: ({ signal }) => api.book(token, signal),
     enabled: token.length > 0,
     refetchInterval: REFRESH.book,
+    // Общий staleTime в 20 с показал бы при возврате на исход старую книгу.
+    staleTime: 0,
   });
 
   // Мелкий тик — показываем десятые доли цента, иначе целые.
@@ -126,11 +154,16 @@ export function OrderBookPanel({
 
   const header = (
     <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5">
-      <div className="flex min-w-0 items-center gap-2">
-        <h3 className="text-sm font-semibold text-text">Стакан</h3>
-        {outcomeLabel && <Badge tone="neutral">{outcomeLabel}</Badge>}
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="text-sm font-semibold text-text">Стакан</h3>
+          {outcomeLabel && <Badge tone={badgeTone(outcomeLabel)}>{outcomeLabel}</Badge>}
+        </div>
+        {marketTitle && (
+          <p className="mt-0.5 truncate text-[11px] text-faint">{marketTitle}</p>
+        )}
       </div>
-      {isFetching && <Spinner className="size-3.5" />}
+      {isFetching && <Spinner className="size-3.5 shrink-0" />}
     </div>
   );
 

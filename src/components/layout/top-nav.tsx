@@ -23,8 +23,11 @@ function CashPill() {
   const hydrated = useHydrated();
 
   return (
-    <div className="flex h-9 shrink-0 items-center gap-2 rounded-xl border border-border bg-surface px-2.5 sm:px-3">
-      <Wallet className="hidden size-3.5 text-faint sm:block" />
+    <div
+      className="flex h-9 shrink-0 items-center gap-2 rounded-xl border border-border bg-surface px-2.5 sm:px-3"
+      title="Виртуальный баланс демо-счёта"
+    >
+      <Wallet className="hidden size-3.5 text-faint sm:block" aria-hidden />
       <span className="tnum text-sm font-semibold text-text">
         {hydrated ? formatMoney(cash, 0) : "—"}
       </span>
@@ -60,7 +63,7 @@ function DepositButton() {
         size="sm"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-label="Пополнить счёт"
+        aria-label="Пополнить демо-счёт"
         className="rounded-xl px-2.5 sm:px-3"
       >
         <Plus className="size-4" />
@@ -69,9 +72,9 @@ function DepositButton() {
 
       {open && (
         <div className="animate-rise absolute right-0 top-11 z-50 w-64 rounded-2xl border border-border bg-surface-raised p-3 shadow-pop">
-          <p className="text-xs font-semibold text-text">Пополнить счёт</p>
+          <p className="text-xs font-semibold text-text">Пополнить демо-счёт</p>
           <p className="mt-1 text-[11px] leading-relaxed text-muted">
-            Демо-режим: виртуальные деньги для тестовых ставок.
+            Кошелёк не нужен: средства виртуальные и зачисляются мгновенно.
           </p>
           <div className="mt-3 grid grid-cols-3 gap-1.5">
             {DEPOSIT_AMOUNTS.map((value) => (

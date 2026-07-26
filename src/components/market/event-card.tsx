@@ -19,19 +19,28 @@ import { cn, eventHref, outcomeColor } from "@/lib/utils";
 import { OutcomeRow, type OutcomeSide } from "./outcome-row";
 import { WatchlistButton } from "./watchlist-button";
 
-/** Сколько исходов показываем в карточке до ссылки «ещё N». */
+/** Сколько строк показываем в карточке до ссылки «ещё N». */
 const MAX_ROWS = 3;
 
-const OUTCOME_FORMS = ["исход", "исхода", "исходов"] as const;
+type PluralForms = readonly [string, string, string];
+
+const OUTCOME_FORMS: PluralForms = ["исход", "исхода", "исходов"];
+const BET_FORMS: PluralForms = ["ставка", "ставки", "ставок"];
 
 /** Русское склонение после числа: 1 исход, 2 исхода, 5 исходов. */
-function outcomeWord(count: number): string {
+function plural(count: number, forms: PluralForms): string {
   const mod100 = count % 100;
-  if (mod100 >= 11 && mod100 <= 14) return OUTCOME_FORMS[2];
+  if (mod100 >= 11 && mod100 <= 14) return forms[2];
   const mod10 = count % 10;
-  if (mod10 === 1) return OUTCOME_FORMS[0];
-  if (mod10 >= 2 && mod10 <= 4) return OUTCOME_FORMS[1];
-  return OUTCOME_FORMS[2];
+  if (mod10 === 1) return forms[0];
+  if (mod10 >= 2 && mod10 <= 4) return forms[1];
+  return forms[2];
+}
+
+/** Рынок фактически определился: цена «за» выродилась в 0/1 или торги закрыты. */
+function isSettled(market: Market): boolean {
+  const price = market.outcomes[0]?.price ?? 0;
+  return market.closed || price >= 1 || price <= 0;
 }
 
 export type QuickBuyHandler = (
@@ -58,12 +67,19 @@ export interface EventCardProps {
   className?: string;
 }
 
+/**
+ * Карточка события в ленте.
+ *
+ * Ценовая модель на всей карточке одна: вероятности из Gamma `outcomePrices`,
+ * где цены исходов одного рынка в сумме дают ровно 1. Исполняемые цены стакана
+ * (bestAsk/bestBid со спредом) сюда намеренно не подмешиваются — иначе пара
+ * кнопок давала бы 101% и расходилась бы с процентом слева. Спред и цену
+ * исполнения показывает страница события.
+ */
 export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
   const router = useRouter();
   const primary = event.markets[0];
   if (!primary) return null;
-
-  const locked = event.closed || !primary.acceptingOrders;
 
   const buy = (market: Market, outcome: Outcome | undefined) => {
     if (!outcome) return;
@@ -74,16 +90,18 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
     router.push(quickBuyHref(event.slug, outcome.tokenId));
   };
 
-  // Gamma почти всем событиям ставит showAllOutcomes, из-за чего `isBinary`
-  // на живых данных почти всегда false. Одиночный рынок на два исхода —
-  // бинарный по определению, поэтому подстраховываемся структурной проверкой.
-  const binary =
-    event.isBinary ||
-    (event.markets.length === 1 && primary.outcomes.length === 2);
+  const binary = event.isBinary;
+  // Взаимоисключающие рынки отвечают на один вопрос и выстраиваются в рейтинг.
+  // Неисключающее событие — набор независимых ставок: ни лидера, ни раскладки
+  // на 100%, поэтому и подписи у него другие. Событие из одного рынка всегда
+  // исключающее: исходы внутри рынка взаимоисключающи по определению.
+  const exclusive = event.exclusive || event.markets.length === 1;
+  const locked = event.closed || primary.closed || !primary.acceptingOrders;
   const yes = primary.outcomes[0];
   const no = primary.outcomes[1];
   const rows = event.markets.slice(0, MAX_ROWS);
   const rest = event.markets.length - rows.length;
+  const restForms = exclusive ? OUTCOME_FORMS : BET_FORMS;
 
   const stop = (handler: () => void) => (e: MouseEvent<HTMLElement>) => {
     e.preventDefault();
@@ -124,9 +142,9 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
           <h3 className="line-clamp-2 text-[13.5px] font-medium leading-snug text-text transition-colors group-hover:text-accent">
             {event.title}
           </h3>
-          {!binary && (
+          {!binary && exclusive && (
             <p className="tnum mt-1 text-[11px] text-faint">
-              {event.markets.length} {outcomeWord(event.markets.length)}
+              {event.markets.length} {plural(event.markets.length, OUTCOME_FORMS)}
             </p>
           )}
         </div>
@@ -144,9 +162,13 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
             fullWidth
             disabled={locked || !yes}
             onClick={stop(() => buy(primary, yes))}
-            className="h-9"
+            title={`Buy ${yes?.label ?? "Yes"} · ${formatCents(yes?.price ?? 0, 0)}`}
+            className="h-9 px-2.5"
           >
-            Buy {yes?.label ?? "Yes"} {formatCents(yes?.price ?? 0, 0)}
+            {/* Название исхода усекается, цена — никогда: столбец цен должен
+                читаться при любой длине подписи вроде «Ninjas in Pyjamas». */}
+            <span className="truncate">{yes?.label ?? "Yes"}</span>
+            <span className="tnum shrink-0">{formatCents(yes?.price ?? 0, 0)}</span>
           </Button>
           <Button
             variant="no"
@@ -154,15 +176,26 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
             fullWidth
             disabled={locked || !no}
             onClick={stop(() => buy(primary, no))}
-            className="h-9"
+            title={`Buy ${no?.label ?? "No"} · ${formatCents(no?.price ?? 0, 0)}`}
+            className="h-9 px-2.5"
           >
-            Buy {no?.label ?? "No"} {formatCents(no?.price ?? 0, 0)}
+            <span className="truncate">{no?.label ?? "No"}</span>
+            <span className="tnum shrink-0">{formatCents(no?.price ?? 0, 0)}</span>
           </Button>
         </div>
       ) : (
         <div className="mt-3 flex flex-col gap-2.5">
+          {!exclusive && (
+            <p className="tnum text-[11px] font-medium text-faint">
+              Ставки события · {event.markets.length}
+            </p>
+          )}
+
           {rows.map((market, index) => {
             const label = market.groupTitle ?? market.question;
+            // Определившиеся вопросы уже уведены вниз списка (normalizeEvent),
+            // но если такой всё же попал в карточку — торговать по нему нечего.
+            const settled = !exclusive && isSettled(market);
             const onBuy = (side: OutcomeSide) =>
               buy(market, side === "yes" ? market.outcomes[0] : market.outcomes[1]);
             return (
@@ -174,7 +207,8 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
                 color={outcomeColor(label, index)}
                 yesLabel={market.outcomes[0]?.label ?? "Yes"}
                 noLabel={market.outcomes[1]?.label ?? "No"}
-                disabled={event.closed || !market.acceptingOrders}
+                settled={settled}
+                disabled={event.closed || market.closed || !market.acceptingOrders}
                 onBuy={onBuy}
               />
             );
@@ -185,7 +219,7 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
               href={eventHref(event.slug)}
               className="relative z-10 w-fit text-[11px] font-medium text-muted transition-colors hover:text-accent"
             >
-              Ещё {rest} {outcomeWord(rest)} →
+              Ещё {rest} {plural(rest, restForms)} →
             </Link>
           )}
         </div>
@@ -201,7 +235,10 @@ export function EventCard({ event, onQuickBuy, className }: EventCardProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <ChangeBadge change={primary.oneDayPriceChange} />
+          {/* Изменение первого рынка — это изменение события только там, где
+              рынки взаимоисключающие. У набора независимых ставок «изменения
+              события» не существует, поэтому бейдж не показываем. */}
+          {(binary || exclusive) && <ChangeBadge change={primary.oneDayPriceChange} />}
           {event.commentCount > 0 && (
             <span className="tnum flex items-center gap-0.5 text-[11px] text-faint">
               <MessageSquare className="size-3" aria-hidden />

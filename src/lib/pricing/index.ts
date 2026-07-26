@@ -59,6 +59,23 @@ export {
 export { orderBookEngine } from "./orderbook-engine";
 export { createLmsrEngine, type LmsrConfig } from "./lmsr";
 
+/** Плечевые («турбо») позиции — своя точка подмены, см. ./leverage. */
+export {
+  emptyLeverageQuote,
+  knockoutPriceFor,
+  LEVERAGE_DEFAULTS,
+  leveragePnlAt,
+  maxLeverage,
+  quoteLeverage,
+  type KnockoutArgs,
+  type LeverageConfig,
+  type LeveragePnlArgs,
+  type LeverageQuote,
+  type LeverageQuoteInput,
+  type LeverageSide,
+  type MaxLeverageArgs,
+} from "./leverage";
+
 /** ⬇⬇⬇ ЕДИНСТВЕННАЯ СТРОКА, КОТОРУЮ НУЖНО ПОМЕНЯТЬ ПРИ ЗАМЕНЕ МАТЕМАТИКИ. */
 export const activeEngine = orderBookEngine;
 

@@ -17,6 +17,16 @@ function RelatedCard({ event }: { event: MarketEvent }) {
   const outcome = top?.outcomes[0];
   const color = outcomeColor(outcome?.label ?? "Yes", 0);
 
+  // Подпись к числу: у бинарного события это его исход, иначе — имя верхнего
+  // рынка. Верхний рынок «лидер» только у взаимоисключающего события; у набора
+  // независимых ставок наверху просто самый ликвидный вопрос, поэтому слово
+  // «Лидер» осталось запасной подписью для первого случая.
+  const caption = event.isBinary
+    ? (outcome?.label ?? "Yes")
+    : (top?.groupTitle ??
+      top?.question ??
+      (event.exclusive ? "Лидер" : "Ставка события"));
+
   return (
     <Link
       href={eventHref(event.slug)}
@@ -31,8 +41,8 @@ function RelatedCard({ event }: { event: MarketEvent }) {
 
       <div className="mt-auto">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[11px] text-faint">
-            {event.isBinary ? (outcome?.label ?? "Yes") : (top?.groupTitle ?? "Лидер")}
+          <span className="truncate text-[11px] text-faint" title={caption}>
+            {caption}
           </span>
           <span className="tnum text-sm font-bold" style={{ color }}>
             {formatProbability(outcome?.price ?? 0)}

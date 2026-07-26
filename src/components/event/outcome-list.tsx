@@ -1,9 +1,10 @@
 "use client";
 
+import { isMarketTradable } from "@/components/trade/outcome-selector";
+import { Badge, ChangeBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MarketImage } from "@/components/ui/market-image";
 import { ProbabilityBar } from "@/components/ui/probability-ring";
-import { ChangeBadge } from "@/components/ui/badge";
 import { formatProbability, formatVolume } from "@/lib/format";
 import type { Market, MarketEvent, Outcome } from "@/lib/types";
 import { cn, outcomeColor } from "@/lib/utils";
@@ -31,6 +32,8 @@ function BinaryOutcomes({ event, selected, onSelect }: OutcomeListProps) {
   const market = event.markets[0];
   if (!market) return null;
 
+  const tradable = isMarketTradable(market, event.closed);
+
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-surface">
       {market.outcomes.map((outcome) => {
@@ -42,10 +45,11 @@ function BinaryOutcomes({ event, selected, onSelect }: OutcomeListProps) {
             type="button"
             onClick={() => onSelect(market, outcome)}
             aria-pressed={active}
+            disabled={!outcome.tokenId}
             className={cn(
               "flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors",
-              "border-b border-border last:border-b-0",
-              active ? "bg-accent-soft" : "hover:bg-surface-hover",
+              "border-b border-border last:border-b-0 disabled:cursor-default disabled:opacity-60",
+              active ? "bg-accent-soft" : "enabled:hover:bg-surface-hover",
             )}
           >
             <span
@@ -71,13 +75,17 @@ function BinaryOutcomes({ event, selected, onSelect }: OutcomeListProps) {
               className={cn(
                 "inline-flex h-8 shrink-0 items-center rounded-lg px-3 text-sm font-semibold",
                 "transition-colors",
-                outcome.index === 0
-                  ? "bg-yes-soft text-yes"
-                  : "bg-no-soft text-no",
-                active && (outcome.index === 0 ? "bg-yes text-white" : "bg-no text-white"),
+                !tradable
+                  ? "bg-surface-hover text-muted"
+                  : outcome.index === 0
+                    ? "bg-yes-soft text-yes"
+                    : "bg-no-soft text-no",
+                tradable &&
+                  active &&
+                  (outcome.index === 0 ? "bg-yes text-white" : "bg-no text-white"),
               )}
             >
-              Купить
+              {tradable ? "Купить" : "Закрыт"}
             </span>
           </button>
         );
@@ -92,10 +100,12 @@ function BinaryOutcomes({ event, selected, onSelect }: OutcomeListProps) {
 
 function MarketRow({
   market,
+  eventClosed,
   selected,
   onSelect,
 }: {
   market: Market;
+  eventClosed: boolean;
   selected: OutcomeSelection;
   onSelect: (market: Market, outcome: Outcome) => void;
 }) {
@@ -103,6 +113,7 @@ function MarketRow({
   const no = market.outcomes[1];
   const active = selected.marketId === market.id;
   const color = outcomeColor(yes?.label ?? "Yes", 0);
+  const tradable = isMarketTradable(market, eventClosed);
 
   return (
     <div
@@ -141,28 +152,32 @@ function MarketRow({
         />
       </div>
 
-      <div className="flex shrink-0 gap-1.5">
-        <Button
-          variant="yes"
-          size="sm"
-          className={cn(
-            "w-16",
-            isSelected(selected, market, 0) && "bg-yes text-white",
-          )}
-          onClick={() => yes && onSelect(market, yes)}
-          disabled={!yes}
-        >
-          Yes
-        </Button>
-        <Button
-          variant="no"
-          size="sm"
-          className={cn("w-16", isSelected(selected, market, 1) && "bg-no text-white")}
-          onClick={() => no && onSelect(market, no)}
-          disabled={!no}
-        >
-          No
-        </Button>
+      {/* Закрытый рынок не притворяется торгуемым: вместо Yes/No — метка. */}
+      <div className="flex w-[136px] shrink-0 justify-end gap-1.5">
+        {tradable ? (
+          <>
+            <Button
+              variant="yes"
+              size="sm"
+              className={cn("w-16", isSelected(selected, market, 0) && "bg-yes text-white")}
+              onClick={() => yes && onSelect(market, yes)}
+              disabled={!yes?.tokenId}
+            >
+              Yes
+            </Button>
+            <Button
+              variant="no"
+              size="sm"
+              className={cn("w-16", isSelected(selected, market, 1) && "bg-no text-white")}
+              onClick={() => no && onSelect(market, no)}
+              disabled={!no?.tokenId}
+            >
+              No
+            </Button>
+          </>
+        ) : (
+          <Badge tone="neutral">Закрыт</Badge>
+        )}
       </div>
     </div>
   );
@@ -191,6 +206,7 @@ export function OutcomeList(props: OutcomeListProps) {
           <MarketRow
             key={market.id}
             market={market}
+            eventClosed={event.closed}
             selected={props.selected}
             onSelect={props.onSelect}
           />

@@ -9,12 +9,17 @@ export default function NotFound() {
     <Container className="py-20">
       <EmptyState
         icon={<Compass />}
-        title="Страница не найдена"
-        description="Возможно, событие закрылось или ссылка устарела. Попробуйте вернуться к списку рынков."
+        title="Такой страницы нет"
+        description="Событие могло закрыться, а ссылка — устареть. Вернитесь к ленте рынков или найдите нужное через поиск в шапке."
         action={
-          <Button asChild size="sm">
-            <Link href="/">К рынкам</Link>
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button asChild size="sm">
+              <Link href="/">На главную</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/markets">Все рынки</Link>
+            </Button>
+          </div>
         }
       />
     </Container>
