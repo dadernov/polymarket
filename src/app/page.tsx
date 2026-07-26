@@ -1,65 +1,104 @@
-import Image from "next/image";
+import { ArrowRight, Flame } from "lucide-react";
+import Link from "next/link";
+import { Container } from "@/components/layout/container";
+import { InfiniteMarketGrid } from "@/components/market/market-grid";
+import { formatCompact, formatVolume } from "@/lib/format";
+import { fetchEvents } from "@/lib/polymarket";
+import type { EventSort, MarketEvent, Paginated } from "@/lib/types";
 
-export default function Home() {
+export const revalidate = 20;
+
+const PAGE_SIZE = 24;
+
+const EMPTY: Paginated<MarketEvent> = { items: [], hasMore: false, nextOffset: 0 };
+
+/** Ключи сортировки, которые понимает лента; подписи к ним — в <SortSelect/>. */
+const SORT_KEYS = ["volume24hr", "volume", "liquidity", "endDate", "competitive"] as const;
+
+function parseSort(value: string | undefined): { sort: EventSort; ascending: boolean } {
+  const sort = SORT_KEYS.find((key) => key === value) ?? "volume24hr";
+  // «Скоро закрытие» — единственная сортировка по возрастанию.
+  return { sort, ascending: sort === "endDate" };
+}
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-w-0">
+      <dt className="whitespace-nowrap text-[11px] leading-none text-faint">{label}</dt>
+      <dd className="tnum mt-1 text-sm font-semibold leading-none text-text">{value}</dd>
+    </div>
+  );
+}
+
+export default async function Home(props: PageProps<"/">) {
+  const searchParams = await props.searchParams;
+  const tag = firstParam(searchParams.tag);
+  const { sort, ascending } = parseSort(firstParam(searchParams.sort));
+
+  // Первая страница берётся прямо в серверном компоненте: клиенту остаётся
+  // только подгрузка следующих, никакого водопада на старте.
+  const page = await fetchEvents({
+    limit: PAGE_SIZE,
+    tagSlug: tag,
+    sort,
+    ascending,
+    closed: false,
+    active: true,
+  }).catch(() => EMPTY);
+
+  const volume24h = page.items.reduce((sum, event) => sum + event.volume24hr, 0);
+  const marketCount = page.items.reduce((sum, event) => sum + event.markets.length, 0);
+
+  return (
+    <Container className="py-5">
+      <section className="flex flex-col gap-4 rounded-xl border border-border bg-bg-subtle px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-[15px] font-semibold leading-tight text-text">
+            Рынки предсказаний
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-1 text-xs leading-relaxed text-muted">
+            Цена акции — это шанс события в процентах. Покупайте Yes или No и
+            зарабатывайте на точном прогнозе.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+
+        <dl className="flex shrink-0 items-center gap-4 sm:gap-5">
+          <Stat label="Объём за 24 часа" value={formatVolume(volume24h)} />
+          <div className="h-8 w-px shrink-0 bg-border" aria-hidden />
+          <Stat label="Активных рынков" value={formatCompact(marketCount)} />
+          <div className="hidden h-8 w-px shrink-0 bg-border sm:block" aria-hidden />
+          <Stat
+            label="Событий в ленте"
+            value={formatCompact(page.items.length)}
+          />
+        </dl>
+      </section>
+
+      <div className="mb-3 mt-6 flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-1.5 text-base font-semibold text-text">
+          <Flame className="size-4 text-accent" aria-hidden />
+          В тренде
+        </h2>
+        <Link
+          href="/markets"
+          className="flex items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-accent"
+        >
+          Все рынки
+          <ArrowRight className="size-3.5" aria-hidden />
+        </Link>
+      </div>
+
+      <InfiniteMarketGrid
+        initialPage={page}
+        params={{ tag, sort, limit: PAGE_SIZE }}
+        ascending={ascending}
+        emptyTitle="В этой категории пока пусто"
+        emptyDescription="Выберите другую категорию сверху или посмотрите весь список рынков."
+      />
+    </Container>
   );
 }

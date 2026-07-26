@@ -1,36 +1,142 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Polymarket — клон рынков предсказаний
 
-## Getting Started
-
-First, run the development server:
+Веб-приложение в структуре и стилистике polymarket.com, работающее на **реальных
+публичных данных Polymarket**. Торговля бумажная: рынки, цены, стакан и история
+котировок настоящие, а сделки виртуальные и хранятся локально в браузере.
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Открыть http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Источники данных
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Все четыре API публичные, без ключей и авторизации. Браузер к ним напрямую не
+обращается — запросы идут через свои route handlers в `src/app/api/*`, что снимает
+CORS, даёт единое место нормализации и серверный кэш.
 
-## Learn More
+| Источник | Что берём |
+| --- | --- |
+| `gamma-api.polymarket.com` | события, рынки, теги, поиск (`/events`, `/markets`, `/tags`, `/public-search`) |
+| `clob.polymarket.com` | стакан заявок и история цен (`/book`, `/books`, `/prices-history`) |
+| `data-api.polymarket.com` | лента сделок и держатели позиций (`/trades`, `/holders`) |
+| `lb-api.polymarket.com` | рейтинги по обороту и прибыли (`/volume`, `/profit`) |
 
-To learn more about Next.js, take a look at the following resources:
+Gamma отдаёт часть полей JSON-строками (`outcomes`, `outcomePrices`,
+`clobTokenIds`) — разбор и приведение к моделям `MarketEvent` / `Market` /
+`Outcome` живёт в [`src/lib/polymarket.ts`](src/lib/polymarket.ts).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Где менять математику
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Вся торговая математика изолирована в `src/lib/pricing/` за одним интерфейсом.
+UI считает цены **только** через `quote()` — больше нигде в проекте расчётов нет.
 
-## Deploy on Vercel
+```
+src/lib/pricing/
+├── types.ts             контракт: QuoteInput → Quote, PricingEngine
+├── orderbook-engine.ts  движок по умолчанию: проход по реальному стакану CLOB
+├── lmsr.ts              альтернатива: Hanson LMSR со стабильным log-sum-exp
+└── index.ts             ← ТОЧКА ПОДМЕНЫ: одна строка `activeEngine = ...`
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Чтобы поставить свою модель: реализуйте `PricingEngine`, замените
+`activeEngine` в [`src/lib/pricing/index.ts`](src/lib/pricing/index.ts) — UI
+трогать не нужно, компоненты типизированы на `Quote`. Требования к замене
+(чистота, отсутствие исключений и NaN, поддержка режимов `amount`/`shares`,
+лимитные цены, комиссия) перечислены в шапке того же файла.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Структура
+
+```
+src/
+├── app/
+│   ├── page.tsx                главная: лента событий с фильтром по тегам
+│   ├── markets/                полный каталог с сортировками
+│   ├── event/[slug]/           страница события: график, исходы, сделка, стакан
+│   ├── portfolio/              позиции, история сделок, P&L
+│   ├── leaderboard/            рейтинг трейдеров (подиум + таблица)
+│   ├── activity/               живая лента сделок по всем рынкам
+│   └── api/                    прокси к Polymarket + валидация параметров
+├── components/
+│   ├── ui/                     примитивы: Button, Badge, ProbabilityRing, Tabs…
+│   ├── layout/                 сайдбар, топбар, категории, поиск, мобильная навигация
+│   ├── market/                 карточки событий и сетка
+│   ├── event/                  шапка, график Recharts, список исходов, правила, холдеры
+│   ├── trade/                  панель покупки/продажи, стакан, тосты
+│   ├── portfolio/              сводка, таблицы позиций и истории, кривая P&L
+│   ├── leaderboard/            таблица рейтинга
+│   └── activity/               глобальная лента
+└── lib/
+    ├── types.ts                модели данных
+    ├── polymarket.ts           серверный клиент API (нормализация + кэш)
+    ├── api.ts                  клиентский слой + ключи React Query
+    ├── format.ts               деньги, проценты, центы, относительное время
+    ├── pricing/                торговая математика (см. выше)
+    └── store/                  zustand: бумажный портфель и избранное
+```
+
+## Как устроена бумажная торговля
+
+- Стартовый баланс **$10 000**, состояние в `localStorage` (`pm.portfolio.v1`).
+- Покупка: сумма в долларах проходит по реальному стакану выбранного исхода,
+  движок возвращает среднюю цену, число акций, проскальзывание и комиссию.
+- Продажа: задаётся числом акций из имеющейся позиции; реализованный
+  результат считается относительно средней цены входа.
+- Позиции переоцениваются по середине текущего стакана; если стакана нет —
+  по цене входа.
+- Комиссия по умолчанию `DEFAULT_FEE_BPS = 0` — меняется там же, в `pricing/`.
+
+## Тема
+
+Тёмная тема основная, светлая полностью поддержана. Палитра — CSS-переменные в
+[`src/app/globals.css`](src/app/globals.css), проброшенные в утилиты Tailwind v4
+(`bg-surface`, `text-muted`, `text-yes`, `bg-no-soft` и т. д.). Хардкод цветов в
+компонентах не используется, переключатель — в сайдбаре.
+
+## Стек
+
+Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Tailwind CSS v4 ·
+TanStack Query · zustand · Recharts · lucide-react · next-themes
+
+## Деплой на сервер
+
+Нужен Node.js **20.9+** (Next.js 16 не работает на Node 18). База данных и
+секреты не требуются.
+
+```bash
+npm ci && npm run build && npm start
+```
+
+Слушает порт 3000 — меняется через `PORT` или `next start -p 8080`. Сверху
+обычно ставят nginx или Caddy для TLS и systemd либо PM2, чтобы процесс
+поднимался после перезагрузки.
+
+Единственная переменная окружения, и она опциональная:
+
+```bash
+SITE_URL=https://ваш-домен.ru
+```
+
+Без неё сайт полностью работает, но `canonical` и ссылки OpenGraph/Twitter
+указывают на `localhost` — то есть ломаются превью ссылок в мессенджерах и
+поисковая индексация. На Vercel подставляется автоматически из `VERCEL_URL`.
+
+Серверу необходим **исходящий HTTPS** к четырём хостам `*.polymarket.com`.
+Проверить до деплоя:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" "https://gamma-api.polymarket.com/events?limit=1"
+```
+
+Ожидается `200`. Если `403` — Polymarket ограничивает адреса дата-центров, и
+понадобится прокси для исходящих запросов; адреса собраны в четырёх константах
+в начале [`src/lib/polymarket.ts`](src/lib/polymarket.ts).
+
+## Ограничения
+
+- Сделки виртуальные: ни кошелька, ни ончейн-транзакций, ни реальных денег.
+- Рынки не резолвятся — выплата по выигравшему исходу не начисляется
+  автоматически, позиция просто остаётся в портфеле.
+- Комментарии к событиям Gamma отдаёт отдельным API — счётчик показывается,
+  сами комментарии не загружаются.
