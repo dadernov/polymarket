@@ -23,6 +23,7 @@ import type {
   RawGammaEvent,
   RawGammaMarket,
   RawGammaTag,
+  SparklineMap,
   Tag,
   Trade,
 } from "./types";
@@ -415,6 +416,8 @@ const FIDELITY: Record<ChartInterval, number> = {
 export async function fetchPriceHistory(
   tokenId: string,
   interval: ChartInterval = "1w",
+  // Спарклайнам нужна та же история, но с длинным кэшем — отсюда параметр.
+  revalidate = 30,
 ): Promise<PricePoint[]> {
   const params = new URLSearchParams({
     market: tokenId,
@@ -423,9 +426,74 @@ export async function fetchPriceHistory(
   });
   const raw = await request<{ history?: PricePoint[] }>(
     `${CLOB}/prices-history?${params}`,
-    { revalidate: 30 },
+    { revalidate },
   );
   return (raw.history ?? []).map((p) => ({ t: toNumber(p.t), p: toNumber(p.p) }));
+}
+
+/* ------------------------------------------------------------------ */
+/* CLOB: пакетные спарклайны                                           */
+/* ------------------------------------------------------------------ */
+
+/** Больше одновременных запросов истории CLOB не выдерживает — начинает 429/5xx. */
+const SPARKLINE_CONCURRENCY = 8;
+
+/** Недельная история меняется медленно, держим её в кэше пять минут. */
+const SPARKLINE_REVALIDATE = 300;
+
+function round4(value: number): number {
+  return Math.round(value * 1e4) / 1e4;
+}
+
+/**
+ * Прореживание по индексу до `count` значений. Первая и последняя точки
+ * сохраняются всегда: последняя цена важнее серединных.
+ */
+function thinSeries(points: PricePoint[], count: number): number[] {
+  const values = points.map((p) => p.p).filter((p) => Number.isFinite(p));
+  if (values.length <= count) return values.map(round4);
+
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) {
+    out.push(round4(values[Math.round((i * (values.length - 1)) / (count - 1))]));
+  }
+  return out;
+}
+
+/**
+ * Короткие ряды цены сразу по списку токенов — для спарклайнов в карточках.
+ * Ошибка по отдельному токену не роняет пакет: токен просто отсутствует
+ * в ответе, как и ряд короче двух точек (рисовать траекторию нечем).
+ */
+export async function fetchSparklines(
+  tokenIds: string[],
+  points = 14,
+): Promise<SparklineMap> {
+  const queue = [...new Set(tokenIds.filter(Boolean))];
+  if (!queue.length) return {};
+
+  const count = Math.max(2, Math.trunc(points));
+  const series: SparklineMap = {};
+  let cursor = 0;
+
+  // Пул воркеров вместо Promise.all по всему списку: держим окно в N запросов.
+  async function worker(): Promise<void> {
+    while (cursor < queue.length) {
+      const tokenId = queue[cursor++];
+      try {
+        const history = await fetchPriceHistory(tokenId, "1w", SPARKLINE_REVALIDATE);
+        const thinned = thinSeries(history, count);
+        if (thinned.length >= 2) series[tokenId] = thinned;
+      } catch {
+        // Молча пропускаем токен: остальной пакет должен доехать.
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(SPARKLINE_CONCURRENCY, queue.length) }, worker),
+  );
+  return series;
 }
 
 /* ------------------------------------------------------------------ */

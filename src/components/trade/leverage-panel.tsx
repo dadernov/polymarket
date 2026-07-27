@@ -3,21 +3,28 @@
 /**
  * Панель плечевой позиции — вторая вкладка панели сделки.
  *
- * Считает всё @/lib/pricing/leverage: экспозицию, нокаут-цену, спред и
- * финансирование. Здесь только ввод, отображение и одна кнопка — своей
- * математики в компоненте нет намеренно, иначе цифры разъедутся с движком.
+ * Герой здесь не выплата, а НОКАУТ-ЦЕНА: у плечевой позиции главный вопрос —
+ * не «сколько я получу», а «на каком уровне я всё потеряю». Поэтому крупным
+ * числом идёт нокаут, под ним расстояние до него, а честное предупреждение о
+ * полной потере маржи стоит рядом, а не мелким шрифтом внизу.
+ *
+ * Считает всё @/lib/pricing/leverage: экспозицию, нокаут, спред и
+ * финансирование. Здесь только ввод и отображение — своей математики в
+ * компоненте нет намеренно, иначе цифры разъедутся с движком.
  *
  * Тост-вьюпорт рендерит trade-panel.tsx, поэтому здесь только `useToast()`:
  * второй <ToastViewport/> показал бы каждое уведомление дважды.
  */
 
-import { AlertTriangle, Info, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
+import { AmountInput, type AmountChip } from "./amount-input";
 import { PayoffChart } from "./payoff-chart";
+import { Metric, MetricList, TradeHero } from "./quote-summary";
 import { useToast } from "./toast";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Hint, Note } from "@/components/ui/hint";
 import { SegmentedControl } from "@/components/ui/tabs";
 import {
   formatCents,
@@ -65,6 +72,21 @@ const DEFAULT_LEVERAGE = 2;
 
 const EPS = 1e-6;
 
+const KNOCKOUT_HINT =
+  "Нокаут — цена, на которой внесённая маржа исчерпана. Позиция закрывается автоматически, маржа теряется целиком, и вернувшаяся обратно цена её не восстановит.";
+
+const LEVERAGE_HINT =
+  "Плечо умножает и прибыль, и убыток: на 5x каждый цент движения цены стоит в пять раз дороже, а нокаут стоит в пять раз ближе к текущей цене.";
+
+const EXPOSURE_HINT =
+  "Экспозиция — размер позиции: маржа, умноженная на плечо. Прибыль и убыток считаются от неё, а не от внесённой суммы.";
+
+const SPREAD_HINT =
+  "Спред — разовая плата площадки за открытие, доля от экспозиции. Она уже вычтена из результата на графике.";
+
+const FUNDING_HINT =
+  "Финансирование — ежедневная плата за заёмную часть экспозиции. Чем дольше держите позицию, тем больше она съедает.";
+
 function toPositive(text: string): number {
   const value = Number.parseFloat(text);
   return Number.isFinite(value) && value > 0 ? value : 0;
@@ -77,15 +99,6 @@ function floor2(value: number): number {
 function toField(value: number): string {
   const floored = floor2(value);
   return floored > 0 ? String(floored) : "";
-}
-
-/** Только цифры и одна точка — то же правило, что в AmountInput. */
-function sanitize(raw: string): string {
-  const cleaned = raw.replace(/,/g, ".").replace(/[^\d.]/g, "");
-  const [head = "", ...rest] = cleaned.split(".");
-  const integer = head.slice(0, 9);
-  if (rest.length === 0) return integer;
-  return `${integer}.${rest.join("").slice(0, 2)}`;
 }
 
 /** Плечо показываем как 3x и 3.5x — без лишнего нуля. */
@@ -103,23 +116,6 @@ function formatPoints(distance: number): string {
 function snapMax(value: number): number {
   if (!Number.isFinite(value) || value <= MIN_LEVERAGE) return MIN_LEVERAGE;
   return Math.max(MIN_LEVERAGE, Math.floor(value / LEVERAGE_STEP) * LEVERAGE_STEP);
-}
-
-function Row({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-muted">{label}</span>
-      <span className={cn("tnum text-right font-medium text-text", tone)}>{value}</span>
-    </div>
-  );
 }
 
 export interface LeveragePanelProps {
@@ -206,11 +202,16 @@ export function LeveragePanel({
     quote.error,
   ]);
 
-  const chips = [
+  const chips: AmountChip[] = [
     { label: "+$10", onClick: () => setMarginText(toField(margin + 10)) },
     { label: "+$50", onClick: () => setMarginText(toField(margin + 50)) },
     { label: "+$200", onClick: () => setMarginText(toField(margin + 200)) },
-    { label: "Max", onClick: () => setMarginText(toField(cash)), disabled: !hydrated },
+    {
+      label: "Max",
+      onClick: () => setMarginText(toField(cash)),
+      disabled: !hydrated,
+      strong: true,
+    },
   ];
 
   function handleSubmit() {
@@ -248,111 +249,57 @@ export function LeveragePanel({
   }
 
   const isLong = side === "LONG";
-  const sideTone = isLong ? "text-yes" : "text-no";
 
   return (
-    <div className={cn("space-y-3 p-3", className)}>
-      <SegmentedControl
-        items={SIDE_ITEMS}
-        value={side}
-        onChange={setSide}
-        className={cn(
-          "flex w-full [&>button]:flex-1",
-          isLong
-            ? "[&_button[aria-pressed='true']]:text-yes"
-            : "[&_button[aria-pressed='true']]:text-no",
-        )}
-      />
-
-      <p className="text-[11px] leading-relaxed text-faint">
-        {isLong
-          ? `Прибыль, если ${outcome.label} дорожает: каждый цент роста умножается на плечо.`
-          : `Прибыль, если ${outcome.label} дешевеет: каждый цент падения умножается на плечо.`}
-      </p>
-
-      {/* ---------------------------- маржа ---------------------------- */}
-
-      <div className="space-y-2">
-        <div
+    <div className={cn("space-y-4 p-5 pt-4", className)}>
+      <div>
+        <SegmentedControl
+          items={SIDE_ITEMS}
+          value={side}
+          onChange={setSide}
           className={cn(
-            "flex items-center gap-3 rounded-xl border bg-bg-subtle px-3 py-2.5 transition-colors",
-            disabledReason === "Недостаточно средств"
-              ? "border-no"
-              : "border-border focus-within:border-border-strong",
-            !tradable && "opacity-60",
+            "flex w-full [&>button]:flex-1",
+            isLong
+              ? "[&_button[aria-pressed='true']]:text-yes"
+              : "[&_button[aria-pressed='true']]:text-no",
           )}
-        >
-          <span className="shrink-0 text-xs font-medium text-muted">Маржа</span>
-
-          <div className="flex min-w-0 flex-1 items-baseline justify-end gap-1">
-            <span
-              className={cn(
-                "text-2xl font-semibold leading-none",
-                marginText.length === 0 ? "text-faint" : "text-text",
-              )}
-            >
-              $
-            </span>
-            {/* Невидимый двойник задаёт ширину поля по содержимому. */}
-            <span className="grid min-w-0 max-w-full">
-              <span
-                aria-hidden
-                className="tnum invisible col-start-1 row-start-1 whitespace-pre px-px text-2xl font-semibold leading-none"
-              >
-                {marginText || "0"}
-              </span>
-              <input
-                type="text"
-                inputMode="decimal"
-                size={1}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="0"
-                value={marginText}
-                disabled={!tradable}
-                aria-label="Маржа в долларах"
-                onChange={(e) => setMarginText(sanitize(e.target.value))}
-                className={cn(
-                  "tnum col-start-1 row-start-1 w-full min-w-0 bg-transparent px-px",
-                  "text-right text-2xl font-semibold leading-none text-text outline-none",
-                  "placeholder:text-faint",
-                )}
-              />
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-1.5">
-          {chips.map((chip) => (
-            <Button
-              key={chip.label}
-              type="button"
-              variant="secondary"
-              size="xs"
-              disabled={!tradable || chip.disabled}
-              onClick={chip.onClick}
-              className="tnum"
-            >
-              {chip.label}
-            </Button>
-          ))}
-        </div>
-
-        {hydrated ? (
-          <p className="tnum text-right text-xs text-faint">Доступно {formatMoney(cash)}</p>
-        ) : (
-          <div className="flex justify-end">
-            <Skeleton className="h-3.5 w-24" />
-          </div>
-        )}
+        />
+        <p className="mt-2 text-[11.5px] leading-relaxed text-muted">
+          {isLong
+            ? `Прибыль, если «${outcome.label}» дорожает: каждый цент роста умножается на плечо.`
+            : `Прибыль, если «${outcome.label}» дешевеет: каждый цент падения умножается на плечо.`}
+        </p>
       </div>
+
+      <AmountInput
+        mode="amount"
+        label="Маржа"
+        value={marginText}
+        onChange={setMarginText}
+        chips={chips}
+        disabled={!tradable}
+        invalid={disabledReason === "Недостаточно средств"}
+        hint={hydrated ? `Доступно ${formatMoney(cash)}` : undefined}
+      />
 
       {/* ---------------------------- плечо ---------------------------- */}
 
-      <div className="space-y-2 rounded-xl border border-border bg-bg-subtle p-3">
+      <div className="rounded-[14px] border border-border bg-bg-subtle px-4 py-3">
         <div className="flex items-baseline justify-between gap-3">
-          <span className="text-xs font-medium text-muted">Плечо</span>
-          <span className={cn("tnum text-xl font-semibold leading-none", sideTone)}>
+          {/* Капитель — только на самом слове: текст подсказки внутри
+              uppercase-контейнера тоже стал бы капителью и не читался. */}
+          <span className="flex items-center gap-1 text-faint">
+            <span className="text-[10.5px] font-medium uppercase tracking-[0.08em]">
+              Плечо
+            </span>
+            <Hint>{LEVERAGE_HINT}</Hint>
+          </span>
+          <span
+            className={cn(
+              "display tnum text-[24px] leading-none",
+              isLong ? "text-yes" : "text-no",
+            )}
+          >
             {formatLeverage(effectiveLeverage)}
           </span>
         </div>
@@ -366,11 +313,11 @@ export function LeveragePanel({
           disabled={!tradable || maxAllowed <= MIN_LEVERAGE}
           aria-label="Плечо"
           onChange={(e) => setLeverage(Number(e.target.value))}
-          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-3 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-grid disabled:cursor-not-allowed disabled:opacity-50"
           style={{ accentColor: isLong ? "var(--yes)" : "var(--no)" }}
         />
 
-        <div className="tnum flex items-center justify-between text-[11px] text-faint">
+        <div className="tnum mt-2 flex items-center justify-between text-[10.5px] text-faint">
           <span>{formatLeverage(MIN_LEVERAGE)}</span>
           <span>
             максимум {formatLeverage(maxAllowed)}
@@ -381,46 +328,61 @@ export function LeveragePanel({
 
       {/* --------------------------- расчёт ---------------------------- */}
 
-      <div
-        className={cn(
-          "rounded-xl border p-3",
-          reachable ? "border-no/40 bg-no-soft" : "border-border bg-bg-subtle",
-        )}
-      >
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="text-xs font-medium text-muted">Нокаут-цена</span>
-          <span
-            className={cn(
-              "tnum text-2xl font-semibold leading-none",
-              reachable ? "text-no" : "text-faint",
-            )}
-          >
-            {!hasQuote ? "—" : reachable ? formatCents(quote.knockoutPrice) : "нет"}
-          </span>
-        </div>
-        <p className="tnum mt-1 text-right text-[11px] text-muted">
-          {!hasQuote
-            ? `текущая цена ${formatCents(entryPrice)}`
-            : reachable
-              ? `${formatPoints(quote.distanceToKnockout)} от текущих ${formatCents(entryPrice)}`
-              : "на этом плече нокаут лежит вне диапазона цен"}
-        </p>
-      </div>
+      <TradeHero
+        kicker="Нокаут-цена"
+        hint={KNOCKOUT_HINT}
+        value={!hasQuote ? "—" : reachable ? formatCents(quote.knockoutPrice) : "нет"}
+        tone={!hasQuote ? "muted" : reachable ? "no" : "neutral"}
+        alarm={reachable}
+        note={
+          !hasQuote ? (
+            <>
+              Текущая цена исхода{" "}
+              <span className="font-semibold text-text">{formatCents(entryPrice)}</span> — введите
+              маржу, чтобы увидеть, где сгорит позиция
+            </>
+          ) : reachable ? (
+            <>
+              <span className="font-semibold text-no">{formatPoints(quote.distanceToKnockout)}</span>{" "}
+              от текущих{" "}
+              <span className="font-semibold text-text">{formatCents(entryPrice)}</span> — столько
+              цена может пройти против вас
+            </>
+          ) : (
+            "На этом плече нокаут лежит вне диапазона цен: сгореть позиция не может"
+          )
+        }
+      />
 
-      <div className="space-y-1.5 rounded-xl border border-border bg-bg-subtle p-3 text-xs">
-        <Row label="Экспозиция" value={hasQuote ? formatMoney(quote.exposure) : "—"} />
-        <Row label="Токенов" value={hasQuote ? formatCompact(quote.tokens) : "—"} />
-        <Row label="Спред" value={hasQuote ? formatMoney(quote.spreadCost) : "—"} />
-        <Row
-          label="Финансирование в день"
-          value={hasQuote ? formatMoney(quote.fundingPerDay) : "—"}
-          tone={hasQuote && quote.fundingPerDay > 0 ? "text-[color:var(--warn)]" : undefined}
+      <MetricList>
+        <Metric
+          label="Экспозиция"
+          hint={EXPOSURE_HINT}
+          value={hasQuote ? formatMoney(quote.exposure) : "—"}
         />
-      </div>
+        <Metric label="Токенов" value={hasQuote ? formatCompact(quote.tokens) : "—"} />
+        <Metric
+          label="Спред при открытии"
+          hint={SPREAD_HINT}
+          value={hasQuote ? formatMoney(quote.spreadCost) : "—"}
+        />
+        <Metric
+          label="Финансирование в день"
+          hint={FUNDING_HINT}
+          value={hasQuote ? formatMoney(quote.fundingPerDay) : "—"}
+          tone={hasQuote && quote.fundingPerDay > 0 ? "text-warn" : undefined}
+        />
+        <Metric
+          label="Максимальный убыток"
+          value={hasQuote ? formatMoney(quote.margin) : "—"}
+          strong
+          divider
+        />
+      </MetricList>
 
       {hasQuote && (
-        <div className="rounded-xl border border-border bg-surface p-3">
-          <p className="mb-1 text-xs font-medium text-muted">
+        <div className="rounded-[14px] border border-border bg-surface px-3 py-3">
+          <p className="mb-1 px-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
             Результат при цене исхода
           </p>
           <PayoffChart
@@ -435,29 +397,23 @@ export function LeveragePanel({
       {/* ------------------------ предупреждение ----------------------- */}
 
       {hasQuote && !reachable ? (
-        <div className="flex items-start gap-2 rounded-lg bg-surface-hover px-2.5 py-2 text-xs leading-relaxed text-muted">
-          <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          <p>
-            На таком плече нокаут-цена лежит за границей диапазона — сгореть позиция
-            не может. Максимум, что вы потеряете, — маржа {formatMoney(margin)}, если
-            исход разрешится против вас.
-          </p>
-        </div>
+        <Note>
+          На таком плече нокаут-цена лежит за границей диапазона — сгореть позиция не может.
+          Максимум, что вы потеряете, — маржа {formatMoney(margin)}, если исход разрешится
+          против вас.
+        </Note>
       ) : (
-        <div className="flex items-start gap-2 rounded-lg bg-[color:var(--warn)]/10 px-2.5 py-2 text-xs leading-relaxed text-[color:var(--warn)]">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          <p>
-            Если цена коснётся нокаут-цены, позиция закроется сама, а маржа
-            {hasQuote ? ` ${formatMoney(margin)} ` : " "}
-            будет потеряна целиком. Вернувшаяся обратно цена её не восстановит —
-            позиции уже не будет. Чем больше плечо, тем ближе нокаут к текущей цене.
-          </p>
-        </div>
+        <Note tone="warn">
+          Если цена коснётся нокаут-цены, позиция закроется сама, а маржа
+          {hasQuote ? ` ${formatMoney(margin)} ` : " "}
+          будет потеряна целиком. Вернувшаяся обратно цена её не восстановит — позиции уже не
+          будет. Чем больше плечо, тем ближе нокаут к текущей цене.
+        </Note>
       )}
 
       {!tradable && (
-        <div className="flex items-start gap-2 rounded-lg bg-surface-hover px-2.5 py-2 text-xs text-muted">
-          <Lock className="mt-px size-3.5 shrink-0" aria-hidden />
+        <div className="flex items-start gap-2 rounded-[12px] bg-bg-subtle px-3 py-2 text-[11.5px] text-muted">
+          <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <p>Рынок не принимает заявки — открыть плечевую позицию нельзя.</p>
         </div>
       )}
@@ -469,11 +425,15 @@ export function LeveragePanel({
         disabled={Boolean(disabledReason)}
         onClick={handleSubmit}
         className={cn(
-          "h-12",
-          !disabledReason &&
-            (isLong
-              ? "bg-yes text-white hover:bg-yes-hover"
-              : "bg-no text-white hover:bg-no-hover"),
+          "h-[52px] rounded-[14px] text-[15px] font-semibold",
+          // На заблокированной кнопке написана причина — её нельзя гасить
+          // до полупрозрачного: opacity примитива здесь снимается.
+          disabledReason
+            ? "bg-bg-subtle text-muted ring-1 ring-inset ring-border disabled:opacity-100"
+            : // В тёмной теме изумруд и роза светлые — подпись берёт цвет фона.
+              isLong
+              ? "bg-yes text-white hover:bg-yes-hover dark:text-bg"
+              : "bg-no text-white hover:bg-no-hover dark:text-bg",
         )}
       >
         {disabledReason ?? `Открыть ${isLong ? "лонг" : "шорт"} ${formatLeverage(effectiveLeverage)}`}

@@ -1,17 +1,70 @@
 "use client";
 
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 import { SearchX } from "lucide-react";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { EmptyState, Spinner } from "@/components/ui/empty-state";
 import { REFRESH, api, eventsPath, queryKeys, type EventsParams } from "@/lib/api";
-import type { MarketEvent, Paginated } from "@/lib/types";
+import type { MarketEvent, Paginated, SparklineMap } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { EventCard, type QuickBuyHandler } from "./event-card";
+import {
+  EventCard,
+  cardTokenIds,
+  headlineTokenId,
+  type QuickBuyHandler,
+} from "./event-card";
 
-const GRID =
-  "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
+// Карточек в ряду меньше, чем было: полоса контента одна (сайдбар убран),
+// и каждая карточка получила высоту, траекторию и крупное число.
+const GRID = "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4";
+
+/**
+ * Сколько токенов уходит в один запрос спарклайнов.
+ *
+ * Ряды берутся пакетом на весь видимый список — по запросу на карточку апстрим
+ * не выдержит. Но список растёт подгрузкой, и один общий пакет пришлось бы
+ * перезапрашивать целиком на каждой странице. Куски фиксированного размера
+ * сохраняют ключ: новая страница добавляет запрос, старые остаются в кэше.
+ */
+const SPARK_CHUNK = 36;
+
+function sparklineQuery(tokenIds: string[]) {
+  return {
+    queryKey: queryKeys.sparklines(tokenIds),
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      api.sparklines(tokenIds, signal),
+    staleTime: REFRESH.events,
+    // Траектория — не основные данные карточки: без неё карточка полна,
+    // поэтому ни повторов при ошибке, ни перезапроса по фокусу окна.
+    retry: false,
+    refetchOnWindowFocus: false,
+  };
+}
+
+/** Ряды цен для всех видимых карточек: tokenId → 14 точек. */
+function useSparklines(events: MarketEvent[]): SparklineMap {
+  const chunks = useMemo(() => {
+    const unique = new Set<string>();
+    for (const event of events) {
+      for (const tokenId of cardTokenIds(event)) unique.add(tokenId);
+    }
+    const ids = [...unique];
+    const batches: string[][] = [];
+    for (let i = 0; i < ids.length; i += SPARK_CHUNK) {
+      batches.push(ids.slice(i, i + SPARK_CHUNK));
+    }
+    return batches;
+  }, [events]);
+
+  const results = useQueries({ queries: chunks.map(sparklineQuery) });
+
+  const series: SparklineMap = {};
+  for (const result of results) {
+    if (result.data) Object.assign(series, result.data);
+  }
+  return series;
+}
 
 export interface MarketGridProps {
   events: MarketEvent[];
@@ -35,13 +88,15 @@ export function MarketGrid({
   loading = false,
   className,
 }: MarketGridProps) {
+  const series = useSparklines(events);
+
   if (events.length === 0) {
     return (
       <EmptyState
         icon={<SearchX />}
         title={emptyTitle}
         description={emptyDescription}
-        className="rounded-xl border border-dashed border-border"
+        className="rounded-[16px] border border-dashed border-border"
       />
     );
   }
@@ -49,19 +104,28 @@ export function MarketGrid({
   return (
     <div className={cn("flex flex-col", className)}>
       <div className={GRID}>
-        {events.map((event) => (
-          <EventCard key={event.id} event={event} onQuickBuy={onQuickBuy} />
-        ))}
+        {events.map((event) => {
+          const headline = headlineTokenId(event);
+          return (
+            <EventCard
+              key={event.id}
+              event={event}
+              points={headline ? series[headline] : undefined}
+              series={series}
+              onQuickBuy={onQuickBuy}
+            />
+          );
+        })}
       </div>
 
       {onLoadMore && hasMore && (
-        <div className="mt-6 flex justify-center">
+        <div className="mt-8 flex justify-center">
           <Button
             variant="outline"
             size="md"
             onClick={onLoadMore}
             disabled={loading}
-            className="min-w-44 rounded-xl"
+            className="min-w-48"
           >
             {loading ? <Spinner /> : null}
             {loading ? "Загружаем…" : "Показать ещё"}

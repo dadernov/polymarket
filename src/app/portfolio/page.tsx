@@ -103,39 +103,48 @@ export default function PortfolioPage() {
   }, [marks, markPrices]);
 
   return (
-    <Container className="py-6 lg:py-8">
-      <header className="mb-5">
-        <h1 className="text-2xl font-bold tracking-tight text-text">Портфель</h1>
-        <p className="mt-1 text-sm text-muted">
-          Бумажный счёт: деньги виртуальные, котировки и переоценка — настоящие.
+    <Container className="py-7 lg:py-9">
+      {/* Издательская шапка страницы: надзаголовок капителью, имя раздела
+          антиквой, описание — и линовка вместо рамки. */}
+      <header className="rule pb-5">
+        <p className="text-[10.5px] font-medium uppercase tracking-[0.16em] text-faint">
+          Демо-счёт
+        </p>
+        <h1 className="display mt-2.5 text-[34px] leading-[1.04] text-text sm:text-[42px]">
+          Портфель
+        </h1>
+        <p className="mt-2.5 max-w-2xl text-[13.5px] leading-relaxed text-muted">
+          Деньги виртуальные, котировки и переоценка — настоящие. Позиции
+          пересчитываются по середине рынка, реализованный результат
+          фиксируется при закрытии.
         </p>
       </header>
 
-      <PortfolioSummary marks={marks} />
+      <div className="mt-6 space-y-4">
+        <PortfolioSummary marks={marks} />
 
-      <div className="mt-4">
         <PnlChart fills={visibleFills} />
-      </div>
 
-      <div className="mt-6">
-        <Tabs
-          value={tab}
-          onChange={setTab}
-          items={[
-            { value: "positions", label: "Позиции", count: positions.length },
-            { value: "leverage", label: "Плечо", count: leveragePositions.length },
-            { value: "history", label: "История", count: visibleFills.length },
-          ]}
-        />
+        <section>
+          <Tabs
+            value={tab}
+            onChange={setTab}
+            items={[
+              { value: "positions", label: "Позиции", count: positions.length },
+              { value: "leverage", label: "Плечо", count: leveragePositions.length },
+              { value: "history", label: "История", count: visibleFills.length },
+            ]}
+          />
 
-        <div className="mt-4">
-          {tab === "positions" && (
-            <PositionsTable positions={positions} marks={marks} loading={!hydrated} />
-          )}
-          {/* Таблица плеча самодостаточна: свои позиции, цены и гидратацию берёт сама. */}
-          {tab === "leverage" && <LeverageTable />}
-          {tab === "history" && <HistoryTable fills={visibleFills} loading={!hydrated} />}
-        </div>
+          <div className="mt-4">
+            {tab === "positions" && (
+              <PositionsTable positions={positions} marks={marks} loading={!hydrated} />
+            )}
+            {/* Таблица плеча самодостаточна: свои позиции, цены и гидратацию берёт сама. */}
+            {tab === "leverage" && <LeverageTable />}
+            {tab === "history" && <HistoryTable fills={visibleFills} loading={!hydrated} />}
+          </div>
+        </section>
       </div>
     </Container>
   );

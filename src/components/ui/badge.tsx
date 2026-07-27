@@ -4,11 +4,11 @@ import type { ReactNode } from "react";
 type Tone = "neutral" | "accent" | "yes" | "no" | "warn" | "live";
 
 const TONES: Record<Tone, string> = {
-  neutral: "bg-surface-hover text-muted border-border",
+  neutral: "bg-bg-subtle text-muted border-border",
   accent: "bg-accent-soft text-accent border-transparent",
   yes: "bg-yes-soft text-yes border-transparent",
   no: "bg-no-soft text-no border-transparent",
-  warn: "bg-[color:var(--warn)]/12 text-[color:var(--warn)] border-transparent",
+  warn: "bg-warn-soft text-warn border-transparent",
   live: "bg-no-soft text-no border-transparent",
 };
 
@@ -24,8 +24,8 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5",
-        "text-[11px] font-medium leading-none whitespace-nowrap",
+        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1",
+        "text-[10.5px] font-medium uppercase tracking-[0.04em] leading-none whitespace-nowrap",
         TONES[tone],
         className,
       )}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { History } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MarketImage } from "@/components/ui/market-image";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +17,10 @@ import {
 import type { Fill } from "@/lib/store";
 import { cn, eventHref } from "@/lib/utils";
 
+/** Капительная шапка столбца — общий вид всех таблиц портфеля. */
+const TH =
+  "px-4 py-3 text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint whitespace-nowrap";
+
 export function HistoryTable({
   fills,
   loading = false,
@@ -26,11 +30,14 @@ export function HistoryTable({
 }) {
   if (loading) {
     return (
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
+      <div className="card overflow-hidden">
         {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="flex items-center gap-3 border-b border-border p-3 last:border-0">
+          <div
+            key={i}
+            className="flex items-center gap-3 border-b border-border p-4 last:border-0"
+          >
             <Skeleton className="h-5 w-16 rounded-full" />
-            <Skeleton className="size-8 rounded-lg" />
+            <Skeleton className="size-8 rounded-xl" />
             <Skeleton className="h-3.5 flex-1" />
             <Skeleton className="h-3.5 w-20" />
           </div>
@@ -41,29 +48,34 @@ export function HistoryTable({
 
   if (fills.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-surface">
+      <div className="card">
         <EmptyState
           icon={<History />}
           title="История сделок пуста"
           description="Каждая покупка и продажа попадает сюда: цена исполнения, комиссия и результат."
+          action={
+            <Button asChild size="sm">
+              <Link href="/">К рынкам</Link>
+            </Button>
+          }
         />
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-surface">
+    <div className="card overflow-hidden">
       <div className="thin-scrollbar overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse text-sm">
+        <table className="w-full min-w-[880px] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-border text-xs font-medium text-muted">
-              <th className="px-3 py-2.5 text-left font-medium">Когда</th>
-              <th className="px-3 py-2.5 text-left font-medium">Сторона</th>
-              <th className="px-3 py-2.5 text-left font-medium">Рынок</th>
-              <th className="px-3 py-2.5 text-right font-medium">Акции</th>
-              <th className="px-3 py-2.5 text-right font-medium">Цена</th>
-              <th className="px-3 py-2.5 text-right font-medium">Итого</th>
-              <th className="px-3 py-2.5 text-right font-medium">Результат</th>
+            <tr className="border-b border-border">
+              <th className={cn(TH, "text-left")}>Когда</th>
+              <th className={cn(TH, "text-left")}>Сторона</th>
+              <th className={cn(TH, "text-left")}>Рынок</th>
+              <th className={cn(TH, "text-right")}>Акции</th>
+              <th className={cn(TH, "text-right")}>Цена</th>
+              <th className={cn(TH, "text-right")}>Итого</th>
+              <th className={cn(TH, "text-right")}>Результат</th>
             </tr>
           </thead>
 
@@ -79,21 +91,30 @@ export function HistoryTable({
                   className="border-b border-border transition-colors last:border-0 hover:bg-surface-hover"
                 >
                   <td
-                    className="whitespace-nowrap px-3 py-3 text-xs text-muted"
+                    className="whitespace-nowrap px-4 py-3.5 text-[12px] text-muted"
                     title={formatDateTime(fill.timestamp)}
                   >
                     {formatRelativeTime(fill.timestamp)}
                   </td>
-                  <td className="px-3 py-3">
-                    <Badge tone={buy ? "yes" : "no"}>{buy ? "Покупка" : "Продажа"}</Badge>
+                  <td className="px-4 py-3.5">
+                    {/* Сторона сделки читается цветом слова, а не плашкой:
+                        в длинной ленте плашки создают лишний шум. */}
+                    <span
+                      className={cn(
+                        "text-[10.5px] font-semibold uppercase tracking-[0.08em]",
+                        buy ? "text-yes" : "text-no",
+                      )}
+                    >
+                      {buy ? "Покупка" : "Продажа"}
+                    </span>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-4 py-3.5">
                     <div className="flex items-center gap-2.5">
-                      <MarketImage src={fill.icon} alt="" size={30} />
+                      <MarketImage src={fill.icon} alt="" size={30} className="rounded-lg" />
                       <div className="min-w-0">
                         <Link
                           href={eventHref(fill.eventSlug)}
-                          className="line-clamp-1 text-sm text-text transition-colors hover:text-accent"
+                          className="line-clamp-1 text-[13.5px] text-text transition-colors hover:text-accent"
                         >
                           {fill.eventTitle}
                         </Link>
@@ -101,18 +122,20 @@ export function HistoryTable({
                       </div>
                     </div>
                   </td>
-                  <td className="tnum px-3 py-3 text-right text-muted">
+                  <td className="tnum px-4 py-3.5 text-right text-muted">
                     {formatCompact(fill.shares)}
                   </td>
-                  <td className="tnum px-3 py-3 text-right text-text">
+                  <td className="tnum px-4 py-3.5 text-right text-text">
                     {formatCents(fill.price)}
                   </td>
-                  <td className="tnum px-3 py-3 text-right font-medium text-text">
+                  <td className="tnum px-4 py-3.5 text-right font-medium text-text">
                     {formatMoney(total)}
                   </td>
-                  <td className="px-3 py-3 text-right">
+                  <td className="px-4 py-3.5 text-right">
                     {buy ? (
-                      <span className="text-xs text-faint">—</span>
+                      <span className="text-xs text-faint" title="Результат фиксируется при продаже">
+                        —
+                      </span>
                     ) : (
                       <span
                         className={cn(

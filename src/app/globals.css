@@ -1,100 +1,98 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-/* ==================================================================== */
-/* BEGIN: design-tokens (дописано агентом app-shell)                     */
-/* Файл оставался скаффолдом create-next-app, а весь UI уже написан под  */
-/* токены ниже — без них не отрисовывается ни один компонент. Если       */
-/* появится «настоящая» версия дизайн-системы, этот блок удаляется       */
-/* целиком, до маркера END.                                              */
-/* ==================================================================== */
-
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Светлая тема */
+/* ==================================================================== */
+/*  Дизайн-система «Ledger»                                             */
+/*                                                                      */
+/*  Замысел: рынок предсказаний — это не казино и не крипто-терминал,   */
+/*  а инструмент чтения будущего. Отсюда три решения:                   */
+/*                                                                      */
+/*  1. Тёплые нейтрали (бумага, а не сине-серый металл). Синие-серые    */
+/*     оттенки — визуальная подпись всех крипто-интерфейсов; тёплая     */
+/*     бумажная гамма читается как деловое издание.                     */
+/*  2. Индиго как акцент вместо «дефолтного» синего, изумруд и роза     */
+/*     вместо светофорных зелёного с красным — те кричат «ставка».      */
+/*  3. Издательская типографика: антиква для крупных чисел и            */
+/*     заголовков, гротеск для интерфейса. Число вероятности — главный  */
+/*     смысловой объект, он и должен выглядеть как объект.               */
+/*                                                                      */
+/*  Имена токенов совпадают с прежними — палитра меняется целиком,      */
+/*  но контракт с компонентами сохранён.                                 */
+/* ==================================================================== */
+
+/* Светлая тема — основная */
 :root {
   color-scheme: light;
 
-  --bg: #ffffff;
-  --bg-subtle: #f6f7f9;
+  --bg: #faf9f7;
+  --bg-subtle: #f2f0ec;
   --surface: #ffffff;
-  --surface-hover: #f1f3f7;
+  --surface-hover: #f7f5f2;
   --surface-raised: #ffffff;
-  --border: #e5e8ee;
-  --border-strong: #c9d1dd;
-  --text: #0f1720;
-  --muted: #5b6673;
-  --faint: #8b95a3;
+  --border: #e8e4dd;
+  --border-strong: #d3cdc3;
+  --text: #1c1a17;
+  --muted: #6e675e;
+  --faint: #9a9288;
 
-  --accent: #1f6fe5;
-  --accent-hover: #1559c7;
-  --accent-soft: #1f6fe51f;
+  --accent: #5a48e0;
+  --accent-hover: #4a38d0;
+  --accent-soft: #5a48e014;
 
-  --yes: #10a065;
-  --yes-hover: #0c8654;
-  --yes-soft: #10a0651f;
-  --no: #dd2f48;
-  --no-hover: #c3273c;
-  --no-soft: #dd2f481f;
-  --warn: #b8790d;
+  --yes: #0b8a5b;
+  --yes-hover: #097049;
+  --yes-soft: #0b8a5b14;
+  --no: #d33a48;
+  --no-hover: #b92e3b;
+  --no-soft: #d33a4814;
+  --warn: #b4700a;
+  --warn-soft: #b4700a14;
 
-  --card-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
-  --pop-shadow: 0 12px 32px -8px rgb(16 24 40 / 0.18);
+  /* Линии сетки на графиках: заметно слабее рамок интерфейса. */
+  --grid: #ece8e1;
+
+  --card-shadow:
+    0 1px 2px rgb(28 26 23 / 0.04), 0 1px 3px -1px rgb(28 26 23 / 0.04);
+  --card-shadow-lift:
+    0 2px 4px rgb(28 26 23 / 0.05), 0 8px 20px -6px rgb(28 26 23 / 0.1);
+  --pop-shadow: 0 16px 48px -12px rgb(28 26 23 / 0.22);
 }
 
-/* Тёмная тема — основной вид приложения */
+/* Тёмная тема — тёплый уголь, не синий металл */
 .dark {
   color-scheme: dark;
 
-  --bg: #0b0f14;
-  --bg-subtle: #0f141b;
-  --surface: #141a22;
-  --surface-hover: #1c242f;
-  --surface-raised: #1a212b;
-  --border: #222b37;
-  --border-strong: #35414f;
-  --text: #e9edf2;
-  --muted: #8c98a8;
-  --faint: #5e6a7a;
+  --bg: #100f0d;
+  --bg-subtle: #161513;
+  --surface: #1c1b18;
+  --surface-hover: #24221e;
+  --surface-raised: #211f1c;
+  --border: #2c2a26;
+  --border-strong: #423f39;
+  --text: #f4f1ec;
+  --muted: #a09889;
+  --faint: #6f6960;
 
-  --accent: #2d7ff9;
-  --accent-hover: #1b6ce6;
-  --accent-soft: #2d7ff926;
+  --accent: #8b7cf6;
+  --accent-hover: #9c8ff8;
+  --accent-soft: #8b7cf629;
 
-  --yes: #23c37e;
-  --yes-hover: #1cab6c;
-  --yes-soft: #23c37e26;
-  --no: #f2596e;
-  --no-hover: #e0475c;
-  --no-soft: #f2596e26;
-  --warn: #efb757;
+  --yes: #34d399;
+  --yes-hover: #4fe0ac;
+  --yes-soft: #34d39926;
+  --no: #fb7185;
+  --no-hover: #fd8b9b;
+  --no-soft: #fb718526;
+  --warn: #fbbf24;
+  --warn-soft: #fbbf2426;
 
-  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
-  --pop-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.6);
+  --grid: #262421;
+
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --card-shadow-lift:
+    0 2px 4px rgb(0 0 0 / 0.4), 0 10px 24px -8px rgb(0 0 0 / 0.55);
+  --pop-shadow: 0 20px 56px -16px rgb(0 0 0 / 0.7);
 }
 
 @theme inline {
@@ -108,6 +106,7 @@ body {
   --color-text: var(--text);
   --color-muted: var(--muted);
   --color-faint: var(--faint);
+  --color-grid: var(--grid);
 
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
@@ -120,16 +119,23 @@ body {
   --color-no-hover: var(--no-hover);
   --color-no-soft: var(--no-soft);
   --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
 
   --shadow-card: var(--card-shadow);
+  --shadow-lift: var(--card-shadow-lift);
   --shadow-pop: var(--pop-shadow);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  /* Антиква для крупных чисел и заголовков — подключается в layout.tsx. */
+  --font-display: var(--font-display), ui-serif, Georgia, serif;
+
+  --radius-card: 16px;
 
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-fade-in: fade-in 0.18s ease-out both;
   --animate-rise: rise 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
+  --animate-draw: draw 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes shimmer {
@@ -172,26 +178,61 @@ body {
   }
 }
 
-/* Карточка рынка: 12px радиус, тонкая рамка, подсветка под курсором. */
+/* Линия спарклайна прочерчивается при появлении карточки. */
+@keyframes draw {
+  from {
+    stroke-dashoffset: var(--draw-length, 1000);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Утилиты                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Карточка. Под курсором приподнимается тенью и границей, но НЕ меняет фон:
+ * внутри карточек лежат графики и полосы вероятности, и смена фона под ними
+ * читается как дефект отрисовки.
+ */
 @utility card {
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--card-shadow);
   transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease;
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
 
+/** Карточка, реагирующая на курсор — только для кликабельных. */
+@utility card-interactive {
   &:hover {
     border-color: var(--border-strong);
-    background: var(--surface-hover);
+    box-shadow: var(--card-shadow-lift);
   }
 }
 
-/* Табличные цифры — чтобы «живые» числа не прыгали по ширине. */
+/** Антиква с плотным трекингом: крупные числа и заголовки страниц. */
+@utility display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+/** Табличные цифры — чтобы «живые» числа не прыгали по ширине. */
 @utility tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+}
+
+/** Прозрачная шапка со размытием — для sticky-панелей. */
+@utility glass {
+  background: color-mix(in oklab, var(--bg) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
 }
 
 @utility no-scrollbar {
@@ -220,7 +261,7 @@ body {
   }
 }
 
-/* Мягкие края у горизонтальных лент (категории, вкладки). */
+/** Мягкие края у горизонтальных лент (категории, карусели). */
 @utility fade-edges {
   mask-image: linear-gradient(
     to right,
@@ -231,11 +272,27 @@ body {
   );
 }
 
+/**
+ * Тонкая бумажная линовка для «издательских» блоков-разделителей.
+ * Даёт ощущение печатной сетки, не создавая рамок.
+ */
+@utility rule {
+  background-image: linear-gradient(
+    to right,
+    var(--border) 0,
+    var(--border) 100%
+  );
+  background-size: 100% 1px;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 ::selection {
@@ -251,6 +308,14 @@ summary:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  border-radius: 6px;
 }
 
-/* END: design-tokens */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

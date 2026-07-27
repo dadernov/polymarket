@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, Briefcase } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -8,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MarketImage } from "@/components/ui/market-image";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Sparkline } from "@/components/ui/sparkline";
+import { api, queryKeys } from "@/lib/api";
 import {
   formatCents,
   formatCompact,
@@ -19,6 +22,13 @@ import { positionCost, type Position } from "@/lib/store";
 import { cn, eventHref } from "@/lib/utils";
 
 type SortKey = "value" | "pnl";
+
+/** Капительная шапка столбца — общий вид всех таблиц портфеля. */
+const TH =
+  "px-4 py-3 text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint whitespace-nowrap";
+
+/** Траектории живут дольше цен: 14 точек за две недели не стареют за минуту. */
+const SPARKLINE_STALE = 120_000;
 
 interface Row {
   position: Position;
@@ -33,6 +43,12 @@ function outcomeTone(label: string): "yes" | "no" | "neutral" {
   if (normalized === "yes" || normalized === "up" || normalized === "over") return "yes";
   if (normalized === "no" || normalized === "down" || normalized === "under") return "no";
   return "neutral";
+}
+
+function pnlTone(pnl: number): string {
+  if (pnl > 0) return "text-yes";
+  if (pnl < 0) return "text-no";
+  return "text-faint";
 }
 
 /** Заголовок сортируемой колонки: клик по активной переворачивает порядок. */
@@ -53,7 +69,7 @@ function SortHeader({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex cursor-pointer items-center gap-1 transition-colors hover:text-text",
+        "inline-flex cursor-pointer items-center gap-1 uppercase tracking-[0.08em] transition-colors hover:text-text",
         active && "text-text",
       )}
     >
@@ -74,6 +90,20 @@ export function PositionsTable({
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("value");
   const [desc, setDesc] = useState(true);
+
+  const tokenIds = useMemo(
+    () => positions.map((position) => position.tokenId).filter(Boolean),
+    [positions],
+  );
+
+  // Траектории берём одним пакетом на всю таблицу: цена без истории не
+  // объясняет, откуда позиция пришла к текущей переоценке.
+  const { data: series } = useQuery({
+    queryKey: queryKeys.sparklines(tokenIds),
+    queryFn: ({ signal }) => api.sparklines(tokenIds, signal),
+    enabled: tokenIds.length > 0,
+    staleTime: SPARKLINE_STALE,
+  });
 
   const rows = useMemo<Row[]>(() => {
     const list = positions.map((position) => {
@@ -101,10 +131,13 @@ export function PositionsTable({
 
   if (loading) {
     return (
-      <div className="space-y-px overflow-hidden rounded-xl border border-border bg-surface">
+      <div className="card overflow-hidden">
         {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="flex items-center gap-3 border-b border-border p-3 last:border-0">
-            <Skeleton className="size-9 rounded-lg" />
+          <div
+            key={i}
+            className="flex items-center gap-3 border-b border-border p-4 last:border-0"
+          >
+            <Skeleton className="size-9 rounded-xl" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-3.5 w-2/5" />
               <Skeleton className="h-3 w-24" />
@@ -118,7 +151,7 @@ export function PositionsTable({
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-surface">
+      <div className="card">
         <EmptyState
           icon={<Briefcase />}
           title="Пока нет открытых позиций"
@@ -134,16 +167,17 @@ export function PositionsTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-surface">
+    <div className="card overflow-hidden">
       <div className="thin-scrollbar overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse text-sm">
+        <table className="w-full min-w-[920px] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-border text-xs font-medium text-muted">
-              <th className="px-3 py-2.5 text-left font-medium">Рынок</th>
-              <th className="px-3 py-2.5 text-right font-medium">Акции</th>
-              <th className="px-3 py-2.5 text-right font-medium">Средняя</th>
-              <th className="px-3 py-2.5 text-right font-medium">Сейчас</th>
-              <th className="px-3 py-2.5 text-right font-medium">
+            <tr className="border-b border-border">
+              <th className={cn(TH, "text-left")}>Рынок</th>
+              <th className={cn(TH, "text-right")}>Акции</th>
+              <th className={cn(TH, "text-right")}>Средняя</th>
+              <th className={cn(TH, "text-right")}>Сейчас</th>
+              <th className={cn(TH, "text-left")}>Траектория</th>
+              <th className={cn(TH, "text-right")}>
                 <SortHeader
                   label="Стоимость"
                   active={sortKey === "value"}
@@ -151,7 +185,7 @@ export function PositionsTable({
                   onClick={() => toggle("value")}
                 />
               </th>
-              <th className="px-3 py-2.5 text-right font-medium">
+              <th className={cn(TH, "text-right")}>
                 <SortHeader
                   label="P&L"
                   active={sortKey === "pnl"}
@@ -159,7 +193,7 @@ export function PositionsTable({
                   onClick={() => toggle("pnl")}
                 />
               </th>
-              <th className="px-3 py-2.5 text-right font-medium" aria-label="Действие" />
+              <th className={cn(TH, "text-right")} aria-label="Действие" />
             </tr>
           </thead>
 
@@ -174,17 +208,17 @@ export function PositionsTable({
                   key={position.id}
                   className="border-b border-border transition-colors last:border-0 hover:bg-surface-hover"
                 >
-                  <td className="px-3 py-3">
+                  <td className="px-4 py-3.5">
                     <div className="flex items-center gap-3">
-                      <MarketImage src={position.icon} alt="" size={36} />
+                      <MarketImage src={position.icon} alt="" size={36} className="rounded-xl" />
                       <div className="min-w-0">
                         <Link
                           href={eventHref(position.eventSlug)}
-                          className="line-clamp-1 text-sm font-medium text-text transition-colors hover:text-accent"
+                          className="line-clamp-1 text-[13.5px] font-medium text-text transition-colors hover:text-accent"
                         >
                           {position.eventTitle || position.marketQuestion}
                         </Link>
-                        <div className="mt-1 flex items-center gap-1.5">
+                        <div className="mt-1.5 flex items-center gap-1.5">
                           <Badge tone={outcomeTone(position.outcomeLabel)}>
                             {position.outcomeLabel}
                           </Badge>
@@ -199,41 +233,35 @@ export function PositionsTable({
                     </div>
                   </td>
 
-                  <td className="tnum px-3 py-3 text-right text-muted">
+                  <td className="tnum px-4 py-3.5 text-right text-muted">
                     {formatCompact(position.shares)}
                   </td>
-                  <td className="tnum px-3 py-3 text-right text-muted">
+                  <td className="tnum px-4 py-3.5 text-right text-muted">
                     {formatCents(position.avgPrice)}
                   </td>
-                  <td className="tnum px-3 py-3 text-right font-medium text-text">
+                  <td className="tnum px-4 py-3.5 text-right font-medium text-text">
                     {formatCents(price)}
                   </td>
-                  <td className="tnum px-3 py-3 text-right font-medium text-text">
+                  <td className="px-4 py-3.5">
+                    <Sparkline
+                      points={series?.[position.tokenId] ?? []}
+                      width={84}
+                      height={26}
+                      dot
+                    />
+                  </td>
+                  <td className="tnum px-4 py-3.5 text-right font-medium text-text">
                     {formatMoney(value)}
                   </td>
-                  <td className="px-3 py-3 text-right">
-                    <div
-                      className={cn(
-                        "tnum font-semibold",
-                        pnl > 0 && "text-yes",
-                        pnl < 0 && "text-no",
-                        pnl === 0 && "text-faint",
-                      )}
-                    >
+                  <td className="px-4 py-3.5 text-right">
+                    <div className={cn("tnum font-semibold", pnlTone(pnl))}>
                       {formatSignedMoney(pnl)}
                     </div>
-                    <div
-                      className={cn(
-                        "tnum text-[11px]",
-                        pnl > 0 && "text-yes",
-                        pnl < 0 && "text-no",
-                        pnl === 0 && "text-faint",
-                      )}
-                    >
+                    <div className={cn("tnum text-[11px]", pnlTone(pnl))}>
                       {formatPercent(pct)}
                     </div>
                   </td>
-                  <td className="px-3 py-3 text-right">
+                  <td className="px-4 py-3.5 text-right">
                     <Button asChild size="xs" variant="outline">
                       <Link href={sellHref}>Продать</Link>
                     </Button>

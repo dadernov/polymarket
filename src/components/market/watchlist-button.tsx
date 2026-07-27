@@ -36,13 +36,13 @@ export function WatchlistButton({
       aria-label={label}
       title={label}
       className={cn(
-        "relative z-10 grid size-6 shrink-0 cursor-pointer place-items-center rounded-md",
+        "relative z-10 grid size-8 shrink-0 cursor-pointer place-items-center rounded-[10px]",
         "transition-colors hover:bg-surface-hover",
         watched ? "text-warn" : "text-faint hover:text-text",
         className,
       )}
     >
-      <Star className={cn("size-3.5", watched && "fill-current")} />
+      <Star className={cn("size-4", watched && "fill-current")} />
     </button>
   );
 }

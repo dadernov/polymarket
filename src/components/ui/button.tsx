@@ -14,23 +14,25 @@ type Size = "xs" | "sm" | "md" | "lg";
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    "bg-accent text-white hover:bg-accent-hover disabled:hover:bg-accent",
+    "bg-text text-bg hover:bg-text/90 disabled:hover:bg-text shadow-card",
   secondary:
-    "bg-surface-hover text-text border border-border hover:border-border-strong",
+    "bg-surface text-text border border-border hover:border-border-strong hover:shadow-card",
   outline:
     "border border-border text-text hover:bg-surface-hover hover:border-border-strong",
   ghost: "text-muted hover:text-text hover:bg-surface-hover",
-  // Кнопки покупки исхода: мягкий фон в покое, насыщенный — под курсором.
-  yes: "bg-yes-soft text-yes hover:bg-yes hover:text-white font-semibold",
-  no: "bg-no-soft text-no hover:bg-no hover:text-white font-semibold",
+  // Кнопки исхода: мягкая плашка в покое, насыщенная — под курсором. Тонкая
+  // внутренняя рамка держит форму кнопки на светлом фоне, где мягкий фон почти
+  // сливается с карточкой.
+  yes: "bg-yes-soft text-yes ring-1 ring-inset ring-yes/15 hover:bg-yes hover:text-white hover:ring-yes font-semibold",
+  no: "bg-no-soft text-no ring-1 ring-inset ring-no/15 hover:bg-no hover:text-white hover:ring-no font-semibold",
   danger: "bg-no text-white hover:bg-no-hover",
 };
 
 const SIZES: Record<Size, string> = {
-  xs: "h-7 px-2.5 text-xs rounded-md gap-1",
-  sm: "h-8 px-3 text-sm rounded-lg gap-1.5",
-  md: "h-10 px-4 text-sm rounded-lg gap-2",
-  lg: "h-12 px-5 text-base rounded-xl gap-2",
+  xs: "h-7 px-2.5 text-xs rounded-lg gap-1",
+  sm: "h-9 px-3.5 text-[13px] rounded-[10px] gap-1.5",
+  md: "h-10 px-4 text-sm rounded-xl gap-2",
+  lg: "h-12 px-5 text-[15px] rounded-2xl gap-2",
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

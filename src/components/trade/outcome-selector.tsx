@@ -1,8 +1,11 @@
 "use client";
 
 /**
- * Выбор того, что именно торгуем: крупные кнопки исходов, а у события со
- * списком рынков — ещё и компактный дропдаун сверху.
+ * Выбор того, что именно торгуем.
+ *
+ * Бинарный рынок — две крупные кнопки: название капителью, цена антиквой,
+ * выбранная сторона залита цветом. Рынок с длинным списком исходов — компактные
+ * строки, событие из нескольких рынков — ещё и выпадающий список сверху.
  *
  * Компонент полностью управляемый: пара «рынок + индекс исхода» приходит
  * сверху и возвращается одним колбэком. Своего состояния выбора здесь нет,
@@ -13,7 +16,6 @@ import { Check, ChevronDown } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { MarketImage } from "@/components/ui/market-image";
 import { formatCents, formatCompact, formatProbability } from "@/lib/format";
 import type { Market, Outcome } from "@/lib/types";
@@ -50,6 +52,24 @@ function marketTitle(market: Market): string {
   return market.groupTitle?.trim() || market.question;
 }
 
+/** Больше этого числа исходов кнопками не показать — переходим на строки. */
+const MAX_BUTTONS = 2;
+
+/**
+ * Выбранная сторона залита цветом. Текст белый только в светлой теме: в тёмной
+ * изумруд и роза сами по себе светлые, и белые буквы на них не читаются —
+ * там подпись берёт цвет фона страницы.
+ */
+const TONE_ACTIVE: Record<OutcomeTone, string> = {
+  yes: "border-yes bg-yes text-white dark:text-bg",
+  no: "border-no bg-no text-white dark:text-bg",
+};
+
+const TONE_IDLE: Record<OutcomeTone, string> = {
+  yes: "border-yes/20 bg-yes-soft text-yes hover:border-yes/45",
+  no: "border-no/20 bg-no-soft text-no hover:border-no/45",
+};
+
 export interface OutcomeSelectorProps {
   markets: Market[];
   market: Market | null;
@@ -66,6 +86,8 @@ export interface OutcomeSelectorProps {
   /** tokenId → число акций в позиции. */
   heldByToken?: Record<string, number>;
   eventClosed?: boolean;
+  /** Подпись капителью над выбором. */
+  label?: string;
 }
 
 export function OutcomeSelector({
@@ -77,6 +99,7 @@ export function OutcomeSelector({
   sellMode = false,
   heldByToken,
   eventClosed = false,
+  label,
 }: OutcomeSelectorProps) {
   const [open, setOpen] = useState(false);
 
@@ -94,9 +117,16 @@ export function OutcomeSelector({
   const visible = sellMode
     ? market.outcomes.filter((outcome) => heldOf(outcome) > 0)
     : market.outcomes;
+  const asButtons = visible.length <= MAX_BUTTONS;
 
   return (
     <div className="space-y-2">
+      {label && (
+        <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
+          {label}
+        </p>
+      )}
+
       {picker && (
         <div className="relative">
           <button
@@ -105,28 +135,26 @@ export function OutcomeSelector({
             aria-haspopup="listbox"
             aria-expanded={open}
             className={cn(
-              "flex w-full cursor-pointer items-center gap-2 rounded-xl border border-border",
-              "bg-bg-subtle px-2.5 py-2 text-left transition-colors hover:border-border-strong",
+              "flex w-full cursor-pointer items-center gap-2.5 rounded-[12px] border border-border",
+              "bg-surface px-2.5 py-2 text-left transition-colors hover:border-border-strong",
             )}
           >
             <MarketImage
               src={market.icon ?? market.image}
               alt=""
-              size={24}
-              className="rounded-md"
+              size={26}
+              className="rounded-[8px]"
             />
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text">
               {marketTitle(market)}
             </span>
-            {!isMarketTradable(market, eventClosed) && (
-              <Badge tone="neutral">Закрыт</Badge>
-            )}
-            <span className="tnum text-sm font-semibold text-text">
+            {!isMarketTradable(market, eventClosed) && <Badge tone="neutral">Закрыт</Badge>}
+            <span className="display tnum text-[15px] text-text">
               {formatProbability(selected?.price)}
             </span>
             <ChevronDown
               className={cn(
-                "size-4 shrink-0 text-muted transition-transform",
+                "size-4 shrink-0 text-faint transition-transform",
                 open && "rotate-180",
               )}
               aria-hidden
@@ -145,9 +173,9 @@ export function OutcomeSelector({
                 role="listbox"
                 aria-label="Рынки события"
                 className={cn(
-                  "thin-scrollbar animate-fade-in absolute inset-x-0 top-full z-40 mt-1",
-                  "max-h-64 overflow-y-auto rounded-xl border border-border",
-                  "bg-surface-raised p-1 shadow-pop",
+                  "thin-scrollbar animate-rise absolute inset-x-0 top-full z-40 mt-1.5",
+                  "max-h-72 overflow-y-auto rounded-[14px] border border-border",
+                  "bg-surface-raised p-1.5 shadow-pop",
                 )}
               >
                 {markets.map((item) => {
@@ -166,7 +194,7 @@ export function OutcomeSelector({
                         setOpen(false);
                       }}
                       className={cn(
-                        "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left",
+                        "flex w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left",
                         "transition-colors hover:bg-surface-hover",
                         active && "bg-surface-hover",
                       )}
@@ -175,20 +203,16 @@ export function OutcomeSelector({
                         src={item.icon ?? item.image}
                         alt=""
                         size={20}
-                        className="rounded"
+                        className="rounded-[6px]"
                       />
-                      <span className="min-w-0 flex-1 truncate text-sm text-text">
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-text">
                         {marketTitle(item)}
                       </span>
-                      {sellMode && held > 0 ? (
-                        <span className="tnum text-xs font-semibold text-muted">
-                          {formatCompact(held)} акц.
-                        </span>
-                      ) : (
-                        <span className="tnum text-xs font-semibold text-muted">
-                          {formatProbability(item.outcomes[0]?.price)}
-                        </span>
-                      )}
+                      <span className="tnum text-[11.5px] font-medium text-muted">
+                        {sellMode && held > 0
+                          ? `${formatCompact(held)} акц.`
+                          : formatProbability(item.outcomes[0]?.price)}
+                      </span>
                       {active && <Check className="size-3.5 shrink-0 text-accent" aria-hidden />}
                     </button>
                   );
@@ -200,44 +224,78 @@ export function OutcomeSelector({
       )}
 
       {visible.length === 0 ? (
-        <p className="rounded-xl border border-border bg-bg-subtle px-3 py-2.5 text-xs text-muted">
+        <p className="rounded-[12px] border border-border bg-bg-subtle px-3 py-2.5 text-[11.5px] text-muted">
           По этому рынку нет позиции — продавать нечего.
         </p>
-      ) : (
-        <div
-          className={cn(
-            "grid gap-2",
-            visible.length > 1 ? "grid-cols-2" : "grid-cols-1",
-          )}
-        >
+      ) : asButtons ? (
+        <div className={cn("grid gap-2", visible.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
           {visible.map((outcome) => {
             const active = outcome.index === outcomeIndex;
             const tone = outcomeTone(outcome);
             const held = heldOf(outcome);
+            const off = disabled || !outcome.tokenId;
             return (
-              <Button
+              <button
                 key={outcome.tokenId ?? `${outcome.label}-${outcome.index}`}
                 type="button"
-                size="lg"
-                variant={tone}
-                disabled={disabled || !outcome.tokenId}
+                disabled={off}
                 aria-pressed={active}
                 onClick={() => onSelect(market, outcome.index)}
                 className={cn(
-                  "h-14 flex-col gap-0.5 rounded-xl px-2",
-                  active &&
-                    (tone === "no"
-                      ? "bg-no text-white hover:bg-no-hover"
-                      : "bg-yes text-white hover:bg-yes-hover"),
+                  "flex cursor-pointer flex-col items-start gap-1 rounded-[14px] border px-3 py-2.5",
+                  "transition-colors disabled:pointer-events-none disabled:opacity-45",
+                  active ? TONE_ACTIVE[tone] : TONE_IDLE[tone],
                 )}
               >
-                <span className="max-w-full truncate text-sm font-semibold">
+                <span
+                  className={cn(
+                    "max-w-full truncate text-[10.5px] font-medium uppercase tracking-[0.08em]",
+                    active ? "opacity-80" : "opacity-90",
+                  )}
+                >
                   {outcome.label}
                 </span>
-                <span className="tnum text-xs font-medium opacity-85">
+                {/* В продаже на кнопке размер позиции, а не цена: без единицы
+                    «121.36» читалось бы как цена исхода. */}
+                <span className="flex items-baseline gap-1">
+                  <span className="display tnum text-[22px] leading-none">
+                    {sellMode ? formatCompact(held) : formatCents(outcome.price, 0)}
+                  </span>
+                  {sellMode && (
+                    <span className="text-[10.5px] font-medium opacity-70">акц.</span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {visible.map((outcome) => {
+            const active = outcome.index === outcomeIndex;
+            const tone = outcomeTone(outcome);
+            const held = heldOf(outcome);
+            const off = disabled || !outcome.tokenId;
+            return (
+              <button
+                key={outcome.tokenId ?? `${outcome.label}-${outcome.index}`}
+                type="button"
+                disabled={off}
+                aria-pressed={active}
+                onClick={() => onSelect(market, outcome.index)}
+                className={cn(
+                  "flex w-full cursor-pointer items-center justify-between gap-3 rounded-[12px] border px-3 py-2",
+                  "transition-colors disabled:pointer-events-none disabled:opacity-45",
+                  active
+                    ? TONE_ACTIVE[tone]
+                    : "border-border bg-surface text-text hover:border-border-strong",
+                )}
+              >
+                <span className="min-w-0 truncate text-[13px] font-medium">{outcome.label}</span>
+                <span className="display tnum shrink-0 text-[16px] leading-none">
                   {sellMode ? `${formatCompact(held)} акц.` : formatCents(outcome.price, 0)}
                 </span>
-              </Button>
+              </button>
             );
           })}
         </div>

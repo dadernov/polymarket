@@ -2,8 +2,13 @@
 
 /**
  * Клиентская оболочка страницы события и единственный владелец выбора
- * «рынок + исход». График, список исходов, панель сделки и стакан читают одну
- * и ту же пару, поэтому разъехаться им негде.
+ * «рынок + исход». Шапка, график, объяснение, список исходов, панель сделки и
+ * стакан читают одну и ту же пару, поэтому разъехаться им негде.
+ *
+ * Порядок блоков задан читателем, а не колонками: вопрос → траектория →
+ * «что вы покупаете» → форма сделки. На узком экране этот же порядок остаётся
+ * порядком в потоке, поэтому новичок видит разбор до того, как дойдёт до кнопки
+ * «купить», а сама панель стоит сразу за героем экрана.
  *
  * Выбор дублируется в query-строку (`?outcome=<tokenId>`): по такой ссылке
  * страница открывается на нужном исходе, как и по диплинку с карточки.
@@ -13,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { EventHeader } from "@/components/event/event-header";
 import { EventTabs } from "@/components/event/event-tabs";
+import { MarketExplainer } from "@/components/event/market-explainer";
 import { OutcomeList, type OutcomeSelection } from "@/components/event/outcome-list";
 import { PriceChart } from "@/components/event/price-chart";
 import { RelatedEvents } from "@/components/event/related-events";
@@ -109,7 +115,7 @@ export function EventView({
 
   if (!market) {
     return (
-      <div className="space-y-5">
+      <div className="space-y-6">
         <EventHeader event={event} />
         <EmptyState
           title="Рынки недоступны"
@@ -121,37 +127,47 @@ export function EventView({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-6">
-      {/* Верх левой колонки */}
-      <div className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-1">
-        <EventHeader event={event} />
-        <PriceChart event={event} activeMarketId={market.id} />
+    <div className="space-y-7 lg:space-y-8">
+      <EventHeader event={event} market={market} outcome={outcome} />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-7">
+        {/* Герой экрана: траектория, а сразу под ней — разбор выбранного
+            исхода. На мобильном оба блока стоят до панели сделки. */}
+        <div className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-1">
+          <PriceChart event={event} activeMarketId={market.id} />
+          {outcome && (
+            <MarketExplainer event={event} market={market} outcome={outcome} />
+          )}
+        </div>
+
+        {/* Стакан рисует сама панель — так он гарантированно от того же
+            исхода, по которому считается котировка. */}
+        {/* id — цель быстрого перехода из шапки на узком экране. */}
+        <aside
+          id="trade"
+          className="min-w-0 self-start scroll-mt-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:sticky lg:top-20"
+        >
+          <TradePanel
+            event={event}
+            initialSide={initialTradeSide(initialSide)}
+            selectedMarket={market}
+            selectedOutcomeIndex={outcomeIndex}
+            onSelect={select}
+            showOrderBook
+          />
+        </aside>
+
+        <div className="min-w-0 space-y-8 lg:col-start-1 lg:row-start-2">
+          <OutcomeList
+            event={event}
+            selected={{ marketId: market.id, outcomeIndex }}
+            onSelect={handleListSelect}
+          />
+          <EventTabs event={event} market={market} />
+        </div>
       </div>
 
-      {/* Правая колонка: на узких экранах уезжает сразу под график.
-          Стакан рисует сама панель — так он гарантированно от того же
-          исхода, по которому считается котировка. */}
-      <aside className="min-w-0 self-start lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:sticky lg:top-20">
-        <TradePanel
-          event={event}
-          initialSide={initialTradeSide(initialSide)}
-          selectedMarket={market}
-          selectedOutcomeIndex={outcomeIndex}
-          onSelect={select}
-          showOrderBook
-        />
-      </aside>
-
-      {/* Низ левой колонки */}
-      <div className="min-w-0 space-y-7 lg:col-start-1 lg:row-start-2">
-        <OutcomeList
-          event={event}
-          selected={{ marketId: market.id, outcomeIndex }}
-          onSelect={handleListSelect}
-        />
-        <EventTabs event={event} market={market} />
-        <RelatedEvents events={related} />
-      </div>
+      <RelatedEvents events={related} />
     </div>
   );
 }

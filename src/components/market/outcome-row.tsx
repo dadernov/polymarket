@@ -5,15 +5,27 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/empty-state";
 import { ProbabilityBar } from "@/components/ui/probability-ring";
+import { Sparkline } from "@/components/ui/sparkline";
 import { formatCents, formatProbability } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type OutcomeSide = "yes" | "no";
 
-/** Пары, которые не нужно подписывать: цвет кнопки и так читается однозначно. */
-const IMPLICIT_PAIRS = new Set(["yes|no", "up|down", "over|under"]);
+/**
+ * Чем строка является по смыслу — от этого зависит вся её подача.
+ *
+ * ranked   — исход взаимоисключающего события: строки сравнимы между собой и
+ *            в сумме дают 100%, поэтому у них есть номер и полоса-мера.
+ * question — отдельный вопрос из набора независимых ставок: сравнивать не с
+ *            чем, рейтинга не существует. Полосы нет (она бы намекала на
+ *            сравнение), вместо неё — собственная траектория цены.
+ */
+export type OutcomeRowVariant = "ranked" | "question";
 
-function isImplicitPair(yes: string, no: string): boolean {
+/** Пары, которые не нужно подписывать: цвет кнопки и так читается однозначно. */
+const IMPLICIT_PAIRS = new Set(["yes|no", "up|down", "over|under", "да|нет"]);
+
+export function isImplicitPair(yes: string, no: string): boolean {
   return IMPLICIT_PAIRS.has(`${yes.trim().toLowerCase()}|${no.trim().toLowerCase()}`);
 }
 
@@ -24,11 +36,21 @@ export interface OutcomeRowProps {
   price: number;
   /** Цена второго исхода рынка. Дополнение до единицы — только фолбэк. */
   noPrice?: number;
-  /** Цвет полосы и процента; по умолчанию акцентный. */
+  /** Цвет полосы; по умолчанию акцентный. Число всегда цветом текста. */
   color?: string;
   /** Подписи исходов берём из самого рынка — бывают Over/Under, имена команд. */
   yesLabel?: string;
   noLabel?: string;
+  variant?: OutcomeRowVariant;
+  /** Номер в рейтинге — только для variant="ranked". */
+  rank?: number;
+  /** Лидер рейтинга: то же число, но крупнее — карточке нужен один герой. */
+  lead?: boolean;
+  /**
+   * Траектория цены исхода из пакетного запроса сетки. Меньше двух точек —
+   * строка выглядит нормально и без неё.
+   */
+  points?: number[];
   /** Рынок уже определился — вместо кнопок показываем пометку. */
   settled?: boolean;
   /** Без обработчика строка становится «только для чтения». */
@@ -43,7 +65,13 @@ export interface OutcomeRowProps {
   className?: string;
 }
 
-/** Строка рынка в мультирыночной карточке: название, полоса, две цены. */
+/**
+ * Строка исхода в мультирыночной карточке.
+ *
+ * Две строки вместо одной: сверху смысл (кто/что и вероятность крупной
+ * антиквой), снизу мера и цены. Так число не конкурирует с кнопками за
+ * внимание, а карточка получает воздух между блоками.
+ */
 export function OutcomeRow({
   label,
   price,
@@ -51,6 +79,10 @@ export function OutcomeRow({
   color,
   yesLabel = "Yes",
   noLabel = "No",
+  variant = "ranked",
+  rank,
+  lead = false,
+  points,
   settled = false,
   onBuy,
   disabled = false,
@@ -63,6 +95,7 @@ export function OutcomeRow({
   // Имена вроде «Ninjas in Pyjamas» показываем строкой выше кнопок: на самих
   // кнопках всегда цена, иначе в одной карточке соседствуют «Yes» и «97¢».
   const named = !isImplicitPair(yesLabel, noLabel);
+  const ranked = variant === "ranked";
 
   const handle = (side: OutcomeSide) => (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -71,64 +104,99 @@ export function OutcomeRow({
   };
 
   return (
-    <div className={cn("flex items-center gap-2.5", className)}>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[13px] font-medium leading-tight text-text">
-            {label}
-          </span>
+    <div className={cn("min-w-0", className)}>
+      <div className="flex items-center gap-2.5">
+        {ranked && rank != null && (
           <span
-            className="tnum shrink-0 text-[13px] font-semibold leading-tight"
-            style={{ color: color ?? "var(--text)" }}
+            className="tnum w-3.5 shrink-0 text-[11px] leading-none text-faint"
+            aria-hidden
           >
-            {formatProbability(price)}
+            {rank}
           </span>
-        </div>
-
-        {named && (
-          <p
-            className="mt-1 truncate text-[10.5px] leading-tight text-faint"
-            title={`${yesLabel} · ${noLabel}`}
-          >
-            <span className="text-yes">{yesLabel}</span>
-            <span aria-hidden> · </span>
-            <span className="text-no">{noLabel}</span>
-          </p>
         )}
 
-        <ProbabilityBar probability={price} color={color} className="mt-1.5" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13.5px] font-medium leading-snug text-text">
+            {label}
+          </p>
+          {named && (
+            <p
+              className="mt-0.5 truncate text-[11px] leading-tight text-faint"
+              title={`${yesLabel} · ${noLabel}`}
+            >
+              <span className="text-yes">{yesLabel}</span>
+              <span aria-hidden> · </span>
+              <span className="text-no">{noLabel}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Траектория лидера идёт вплотную к его числу: рейтинг без истории
+            не говорит, кто поднимается, а кто сдаёт. Место под неё держим
+            всегда — ряды приезжают позже разметки, и иначе название рынка
+            дёргалось бы при их появлении. */}
+        {ranked && lead && (
+          <Sparkline points={points ?? []} width={52} height={18} />
+        )}
+
+        <span
+          className={cn(
+            "display tnum shrink-0 leading-none text-text",
+            lead ? "text-[26px]" : "text-[20px]",
+          )}
+        >
+          {formatProbability(price)}
+        </span>
       </div>
 
-      {settled && (
-        <Badge className="shrink-0 text-faint">Решён</Badge>
-      )}
+      <div className="mt-2 flex items-center gap-3">
+        {ranked ? (
+          <ProbabilityBar
+            probability={price}
+            color={color}
+            className="min-w-0 flex-1"
+          />
+        ) : (
+          <Sparkline points={points ?? []} width={72} height={22} dot />
+        )}
 
-      {!settled && onBuy && (
-        <div className="relative z-10 flex shrink-0 items-center gap-1">
-          <Button
-            variant="yes"
-            size="xs"
-            disabled={disabled || loadingSide === "yes"}
-            onClick={handle("yes")}
-            title={`${yesLabel} · ${formatCents(price, 0)}`}
-            aria-label={`${yesLabel} по ${formatCents(price, 0)}`}
-            className="tnum h-7 px-2 text-[11px]"
-          >
-            {loadingSide === "yes" ? <Spinner className="size-3" /> : formatCents(price, 0)}
-          </Button>
-          <Button
-            variant="no"
-            size="xs"
-            disabled={disabled || loadingSide === "no"}
-            onClick={handle("no")}
-            title={`${noLabel} · ${formatCents(against, 0)}`}
-            aria-label={`${noLabel} по ${formatCents(against, 0)}`}
-            className="tnum h-7 px-2 text-[11px]"
-          >
-            {loadingSide === "no" ? <Spinner className="size-3" /> : formatCents(against, 0)}
-          </Button>
-        </div>
-      )}
+        {settled && <Badge className="ml-auto shrink-0 text-faint">Решён</Badge>}
+
+        {!settled && onBuy && (
+          <div className="relative z-10 ml-auto flex shrink-0 items-center gap-1.5">
+            <Button
+              variant="yes"
+              size="xs"
+              disabled={disabled || loadingSide === "yes"}
+              onClick={handle("yes")}
+              title={`${yesLabel} · ${formatCents(price, 0)}`}
+              aria-label={`${yesLabel} по ${formatCents(price, 0)}`}
+              className="tnum h-8 min-w-[48px] px-2 text-[11.5px]"
+            >
+              {loadingSide === "yes" ? (
+                <Spinner className="size-3" />
+              ) : (
+                formatCents(price, 0)
+              )}
+            </Button>
+            <Button
+              variant="no"
+              size="xs"
+              disabled={disabled || loadingSide === "no"}
+              onClick={handle("no")}
+              title={`${noLabel} · ${formatCents(against, 0)}`}
+              aria-label={`${noLabel} по ${formatCents(against, 0)}`}
+              className="tnum h-8 min-w-[48px] px-2 text-[11.5px]"
+            >
+              {loadingSide === "no" ? (
+                <Spinner className="size-3" />
+              ) : (
+                formatCents(against, 0)
+              )}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

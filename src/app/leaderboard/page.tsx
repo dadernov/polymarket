@@ -10,15 +10,23 @@ export const metadata: Metadata = {
 
 export default function LeaderboardPage() {
   return (
-    <Container className="py-6 lg:py-8">
-      <header className="mb-5">
-        <h1 className="text-2xl font-bold tracking-tight text-text">Лидеры</h1>
-        <p className="mt-1 text-sm text-muted">
-          Кто больше всех торгует и зарабатывает на прогнозах. Данные Polymarket.
+    <Container className="py-7 lg:py-9">
+      <header className="rule pb-5">
+        <p className="text-[10.5px] font-medium uppercase tracking-[0.16em] text-faint">
+          Рейтинг трейдеров
+        </p>
+        <h1 className="display mt-2.5 text-[34px] leading-[1.04] text-text sm:text-[42px]">
+          Лидеры
+        </h1>
+        <p className="mt-2.5 max-w-2xl text-[13.5px] leading-relaxed text-muted">
+          Кто больше всех торгует и точнее всех угадывает исходы. Оборот и
+          чистый результат по публичным данным Polymarket.
         </p>
       </header>
 
-      <LeaderboardTable />
+      <div className="mt-6">
+        <LeaderboardTable />
+      </div>
     </Container>
   );
 }

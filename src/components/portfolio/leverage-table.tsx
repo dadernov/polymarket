@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Hint } from "@/components/ui/hint";
 import { MarketImage } from "@/components/ui/market-image";
 import { Skeleton } from "@/components/ui/skeleton";
 import { REFRESH, api, queryKeys } from "@/lib/api";
@@ -44,6 +45,13 @@ const NO_POSITIONS: LeveragePosition[] = [];
 /** Ближе этого расстояния до нокаута строку подсвечиваем. */
 const DANGER_POINTS = 0.02;
 const WARN_POINTS = 0.05;
+
+/** Шкала полосы риска: на этом расстоянии от нокаута полоса пуста. */
+const RISK_SPAN = 0.1;
+
+/** Капительная шапка столбца — общий вид всех таблиц портфеля. */
+const TH =
+  "px-4 py-3 text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint whitespace-nowrap";
 
 const MESSAGES: Record<string, string> = {
   "Position not found": "Позиция не найдена",
@@ -101,15 +109,15 @@ function useLeverageMarks(positions: LeveragePosition[]): Record<string, number>
 function MarketCell({ position }: { position: LeveragePosition }) {
   return (
     <div className="flex items-center gap-3">
-      <MarketImage src={position.icon} alt="" size={36} />
+      <MarketImage src={position.icon} alt="" size={36} className="rounded-xl" />
       <div className="min-w-0">
         <Link
           href={eventHref(position.eventSlug)}
-          className="line-clamp-1 text-sm font-medium text-text transition-colors hover:text-accent"
+          className="line-clamp-1 text-[13.5px] font-medium text-text transition-colors hover:text-accent"
         >
           {position.eventTitle || position.marketQuestion}
         </Link>
-        <div className="mt-1 flex items-center gap-1.5">
+        <div className="mt-1.5 flex items-center gap-1.5">
           <Badge>{position.outcomeLabel}</Badge>
           {position.marketQuestion && position.marketQuestion !== position.eventTitle && (
             <span className="line-clamp-1 text-[11px] text-faint">
@@ -127,6 +135,25 @@ function SideCell({ side }: { side: LeveragePosition["side"] }) {
     <Badge tone={side === "LONG" ? "yes" : "no"}>
       {side === "LONG" ? "LONG" : "SHORT"}
     </Badge>
+  );
+}
+
+/**
+ * Полоса близости к нокауту: полная — цена вплотную к сгоранию.
+ * Число рядом точнее, но полоса читается одним взглядом по всей таблице.
+ */
+function RiskBar({ distance }: { distance: number }) {
+  const risk = Math.min(1, Math.max(0, 1 - Math.abs(distance) / RISK_SPAN));
+  return (
+    <div className="ml-auto mt-1.5 h-[3px] w-16 overflow-hidden rounded-full bg-grid">
+      <div
+        className={cn(
+          "h-full rounded-full transition-[width] duration-300",
+          risk >= 0.8 ? "bg-no" : risk >= 0.5 ? "bg-warn" : "bg-border-strong",
+        )}
+        style={{ width: `${Math.max(4, risk * 100)}%` }}
+      />
+    </div>
   );
 }
 
@@ -173,13 +200,13 @@ export function LeverageTable() {
 
   if (!hydrated) {
     return (
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
+      <div className="card overflow-hidden">
         {Array.from({ length: 3 }, (_, i) => (
           <div
             key={i}
-            className="flex items-center gap-3 border-b border-border p-3 last:border-0"
+            className="flex items-center gap-3 border-b border-border p-4 last:border-0"
           >
-            <Skeleton className="size-9 rounded-lg" />
+            <Skeleton className="size-9 rounded-xl" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-3.5 w-2/5" />
               <Skeleton className="h-3 w-24" />
@@ -193,7 +220,7 @@ export function LeverageTable() {
 
   if (positions.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-surface">
+      <div className="card">
         <EmptyState
           icon={<Gauge />}
           title="Плечевых позиций нет"
@@ -209,29 +236,46 @@ export function LeverageTable() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {error && (
-        <p className="rounded-lg bg-no-soft px-3 py-2 text-xs text-no" role="alert">
+        <p className="rounded-xl bg-no-soft px-3.5 py-2.5 text-xs text-no" role="alert">
           {error}
         </p>
       )}
 
       {live.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="card overflow-hidden">
+          {/* Пояснение к нокауту живёт над таблицей, а не в её шапке:
+              горизонтальная прокрутка обрезала бы всплывающую подсказку. */}
+          <header className="rule flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-3">
+            <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
+              Открытые позиции
+              <span className="tnum ml-1.5 text-muted">{live.length}</span>
+            </p>
+            <span className="flex items-center gap-1.5 text-[11px] text-faint">
+              Убыток ограничен маржой
+              <Hint side="bottom">
+                Нокаут — цена, на которой позиция закрывается принудительно, а
+                маржа списывается полностью. Возврат цены обратно её уже не
+                восстанавливает.
+              </Hint>
+            </span>
+          </header>
+
           <div className="thin-scrollbar overflow-x-auto">
-            <table className="w-full min-w-[1020px] border-collapse text-sm">
+            <table className="w-full min-w-[1060px] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-border text-xs font-medium text-muted">
-                  <th className="px-3 py-2.5 text-left font-medium">Рынок</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Сторона</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Плечо</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Вход</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Сейчас</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Нокаут</th>
-                  <th className="px-3 py-2.5 text-right font-medium">До нокаута</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Маржа</th>
-                  <th className="px-3 py-2.5 text-right font-medium">P&L</th>
-                  <th className="px-3 py-2.5 text-right font-medium" aria-label="Действие" />
+                <tr className="border-b border-border">
+                  <th className={cn(TH, "text-left")}>Рынок</th>
+                  <th className={cn(TH, "text-left")}>Сторона</th>
+                  <th className={cn(TH, "text-right")}>Плечо</th>
+                  <th className={cn(TH, "text-right")}>Вход</th>
+                  <th className={cn(TH, "text-right")}>Сейчас</th>
+                  <th className={cn(TH, "text-right")}>Нокаут</th>
+                  <th className={cn(TH, "text-right")}>До нокаута</th>
+                  <th className={cn(TH, "text-right")}>Маржа</th>
+                  <th className={cn(TH, "text-right")}>P&L</th>
+                  <th className={cn(TH, "text-right")} aria-label="Действие" />
                 </tr>
               </thead>
 
@@ -249,42 +293,45 @@ export function LeverageTable() {
                       key={position.id}
                       className="border-b border-border transition-colors last:border-0 hover:bg-surface-hover"
                     >
-                      <td className="px-3 py-3">
+                      <td className="px-4 py-3.5">
                         <MarketCell position={position} />
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-4 py-3.5">
                         <SideCell side={position.side} />
                       </td>
-                      <td className="tnum px-3 py-3 text-right font-medium text-text">
+                      <td className="tnum px-4 py-3.5 text-right font-medium text-text">
                         {formatLeverage(position.leverage)}
                       </td>
-                      <td className="tnum px-3 py-3 text-right text-muted">
+                      <td className="tnum px-4 py-3.5 text-right text-muted">
                         {formatCents(position.entryPrice)}
                       </td>
-                      <td className="tnum px-3 py-3 text-right font-medium text-text">
+                      <td className="tnum px-4 py-3.5 text-right font-medium text-text">
                         {formatCents(price)}
                       </td>
-                      <td className="tnum px-3 py-3 text-right font-medium text-no">
+                      <td className="tnum px-4 py-3.5 text-right font-medium text-no">
                         {reachable ? formatCents(position.knockoutPrice) : "—"}
                       </td>
-                      <td
-                        className={cn(
-                          "tnum px-3 py-3 text-right",
-                          !reachable && "text-faint",
-                          reachable && distance <= DANGER_POINTS && "font-semibold text-no",
-                          reachable &&
-                            distance > DANGER_POINTS &&
-                            distance <= WARN_POINTS &&
-                            "text-[color:var(--warn)]",
-                          reachable && distance > WARN_POINTS && "text-muted",
-                        )}
-                      >
-                        {reachable ? formatPoints(distance) : "недостижим"}
+                      <td className="px-4 py-3.5 text-right">
+                        <div
+                          className={cn(
+                            "tnum",
+                            !reachable && "text-faint",
+                            reachable && distance <= DANGER_POINTS && "font-semibold text-no",
+                            reachable &&
+                              distance > DANGER_POINTS &&
+                              distance <= WARN_POINTS &&
+                              "text-warn",
+                            reachable && distance > WARN_POINTS && "text-muted",
+                          )}
+                        >
+                          {reachable ? formatPoints(distance) : "недостижим"}
+                        </div>
+                        {reachable && <RiskBar distance={distance} />}
                       </td>
-                      <td className="tnum px-3 py-3 text-right text-muted">
+                      <td className="tnum px-4 py-3.5 text-right text-muted">
                         {formatMoney(position.margin)}
                       </td>
-                      <td className="px-3 py-3 text-right">
+                      <td className="px-4 py-3.5 text-right">
                         <div className={cn("tnum font-semibold", pnlTone(pnl))}>
                           {formatSignedMoney(pnl)}
                         </div>
@@ -292,7 +339,7 @@ export function LeverageTable() {
                           {formatPercent(pct)}
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-right">
+                      <td className="px-4 py-3.5 text-right">
                         <Button
                           type="button"
                           size="xs"
@@ -312,11 +359,11 @@ export function LeverageTable() {
       )}
 
       {burned.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          <header className="flex items-baseline justify-between gap-3 border-b border-border px-3 py-2.5">
-            <p className="text-xs font-medium text-muted">
+        <div className="card overflow-hidden">
+          <header className="rule flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-3">
+            <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
               Сгоревшие позиции
-              <span className="tnum ml-1.5 text-faint">{burned.length}</span>
+              <span className="tnum ml-1.5 text-muted">{burned.length}</span>
             </p>
             <p className="text-[11px] text-faint">
               Маржа списана полностью — возврат цены их не восстанавливает
@@ -324,35 +371,35 @@ export function LeverageTable() {
           </header>
 
           <div className="thin-scrollbar overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-sm">
+            <table className="w-full min-w-[760px] border-collapse text-sm">
               <tbody>
                 {burned.map((position) => (
                   <tr
                     key={position.id}
-                    className="border-b border-border opacity-60 transition-opacity last:border-0 hover:opacity-100"
+                    className="border-b border-border opacity-55 transition-opacity last:border-0 hover:opacity-100"
                   >
-                    <td className="px-3 py-3">
+                    <td className="px-4 py-3.5">
                       <MarketCell position={position} />
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-4 py-3.5">
                       <SideCell side={position.side} />
                     </td>
-                    <td className="tnum px-3 py-3 text-right text-muted">
+                    <td className="tnum px-4 py-3.5 text-right text-muted">
                       {formatLeverage(position.leverage)}
                     </td>
-                    <td className="tnum px-3 py-3 text-right text-muted">
+                    <td className="tnum px-4 py-3.5 text-right text-muted">
                       {formatCents(position.entryPrice)} → {formatCents(position.knockoutPrice)}
                     </td>
-                    <td className="px-3 py-3 text-right">
+                    <td className="px-4 py-3.5 text-right">
                       <Badge tone="no">Сгорела</Badge>
-                      <div className="tnum mt-1 text-[11px] text-faint">
+                      <div className="tnum mt-1.5 text-[11px] text-faint">
                         {position.knockedOutAt ? formatDateTime(position.knockedOutAt) : "—"}
                       </div>
                     </td>
-                    <td className="tnum px-3 py-3 text-right font-semibold text-no">
+                    <td className="tnum px-4 py-3.5 text-right font-semibold text-no">
                       {formatSignedMoney(-position.margin)}
                     </td>
-                    <td className="px-3 py-3 text-right">
+                    <td className="px-4 py-3.5 text-right">
                       <Button
                         type="button"
                         size="xs"

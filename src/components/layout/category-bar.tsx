@@ -31,9 +31,13 @@ const FALLBACK_TAGS: Tag[] = [
   { id: "f-elections", label: "Elections", slug: "elections" },
 ];
 
-const SHELL =
-  "sticky top-14 z-30 border-b border-border bg-bg/80 backdrop-blur-xl";
-const ROW = "no-scrollbar fade-edges flex items-center gap-2 overflow-x-auto py-2.5";
+/** Ленту показываем только там, где под ней действительно есть список рынков. */
+const LIST_ROUTES = new Set(["/", "/markets"]);
+
+// 65px — высота шапки вместе с её нижней рамкой: лента встаёт вплотную под ней,
+// не перекрывая линию и не оставляя щели, через которую просвечивает контент.
+const SHELL = "glass sticky top-[65px] z-30 border-b border-border";
+const ROW = "no-scrollbar fade-edges flex items-center gap-2 overflow-x-auto py-3";
 
 function CategoryBarInner() {
   const router = useRouter();
@@ -116,11 +120,11 @@ function CategoryBarInner() {
                 aria-pressed={isActive}
                 onClick={() => select(tag.slug)}
                 className={cn(
-                  "flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3.5",
-                  "text-[13px] font-medium transition-colors",
+                  "flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-4",
+                  "text-[13px] transition-colors",
                   isActive
-                    ? "border-transparent bg-text text-bg"
-                    : "border-border bg-surface text-muted hover:border-border-strong hover:text-text",
+                    ? "border-transparent bg-text font-semibold text-bg"
+                    : "border-border bg-surface font-medium text-muted hover:border-border-strong hover:text-text",
                 )}
               >
                 {tag.label}
@@ -141,11 +145,11 @@ function CategoryBarFallback() {
     <div className={SHELL}>
       <Container>
         <div className={ROW}>
-          {["w-14", "w-20", "w-16", "w-24", "w-18", "w-20", "w-16"].map(
+          {["w-16", "w-24", "w-20", "w-28", "w-20", "w-24", "w-16"].map(
             (w, i) => (
               <Skeleton
                 key={i}
-                className={cn("h-8 shrink-0 rounded-full", w)}
+                className={cn("h-9 shrink-0 rounded-full", w)}
               />
             ),
           )}
@@ -155,8 +159,15 @@ function CategoryBarFallback() {
   );
 }
 
-/** useSearchParams требует Suspense-границы — оборачиваем прямо здесь. */
+/**
+ * Лента живёт только на страницах списков: на карточке события или в портфеле
+ * фильтр категорий ни на что не влияет и лишь съедает высоту экрана.
+ * useSearchParams требует Suspense-границы — оборачиваем прямо здесь.
+ */
 export function CategoryBar() {
+  const pathname = usePathname();
+  if (!LIST_ROUTES.has(pathname)) return null;
+
   return (
     <Suspense fallback={<CategoryBarFallback />}>
       <CategoryBarInner />

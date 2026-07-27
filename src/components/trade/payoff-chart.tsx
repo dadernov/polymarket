@@ -5,8 +5,9 @@
  * окажется равна X. Ничего не считает сам — форму кривой целиком задаёт
  * `pnlAt` из quoteLeverage, поэтому график и цифры в панели не разъедутся.
  *
- * Заливка режется по нулю: выше — зелёная, ниже — красная. Точку разреза
- * задаёт градиент, а не два отдельных ряда, иначе на изломе появляется щель.
+ * Заливка режется по нулю: выше — изумруд, ниже — роза. Точку разреза задаёт
+ * градиент, а не два отдельных ряда, иначе на изломе появляется щель.
+ * Линии сетки и рамки — токен `grid`, они должны быть слабее любой подписи.
  */
 
 import { useId, useMemo } from "react";
@@ -109,13 +110,13 @@ function PayoffTooltip({ active, payload }: TooltipContentProps) {
   if (!point) return null;
 
   return (
-    <div className="rounded-lg border border-border bg-surface-raised px-2.5 py-1.5 shadow-pop">
-      <p className="tnum text-[11px] text-muted">
+    <div className="rounded-[12px] border border-border bg-surface-raised px-3 py-2 shadow-pop">
+      <p className="tnum text-[10px] font-medium uppercase tracking-[0.08em] text-faint">
         Цена {formatCents(point.price)}
       </p>
       <p
         className={cn(
-          "tnum text-sm font-semibold",
+          "display tnum mt-1 text-[19px] leading-none",
           point.pnl > 0 && "text-yes",
           point.pnl < 0 && "text-no",
           point.pnl === 0 && "text-text",
@@ -147,7 +148,7 @@ export function PayoffChart({
   entryPrice,
   knockoutPrice,
   pnlAt,
-  height = 180,
+  height = 168,
   className,
 }: PayoffChartProps) {
   const entry = clamp01(entryPrice);
@@ -177,16 +178,16 @@ export function PayoffChart({
   const split = span > 0 ? Math.min(1, Math.max(0, hi / span)) : 1;
 
   return (
-    <div className={cn("space-y-1.5", className)}>
+    <div className={cn("space-y-2", className)}>
       <div style={{ height }} className="w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={points} margin={{ top: 14, right: 6, bottom: 0, left: 0 }}>
+          <AreaChart data={points} margin={{ top: 14, right: 4, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset={0} stopColor="var(--yes)" stopOpacity={0.34} />
-                <stop offset={split} stopColor="var(--yes)" stopOpacity={0.04} />
-                <stop offset={split} stopColor="var(--no)" stopOpacity={0.04} />
-                <stop offset={1} stopColor="var(--no)" stopOpacity={0.34} />
+                <stop offset={0} stopColor="var(--yes)" stopOpacity={0.3} />
+                <stop offset={split} stopColor="var(--yes)" stopOpacity={0.03} />
+                <stop offset={split} stopColor="var(--no)" stopOpacity={0.03} />
+                <stop offset={1} stopColor="var(--no)" stopOpacity={0.3} />
               </linearGradient>
               <linearGradient id={strokeId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset={split} stopColor="var(--yes)" />
@@ -200,27 +201,28 @@ export function PayoffChart({
               domain={[0, 1]}
               ticks={[0, 0.25, 0.5, 0.75, 1]}
               tickFormatter={(value: number) => formatCents(value, 0)}
-              tick={{ fill: "var(--faint)", fontSize: 10 }}
+              tick={{ fill: "var(--faint)", fontSize: 9.5 }}
               tickLine={false}
-              axisLine={{ stroke: "var(--border)" }}
+              axisLine={{ stroke: "var(--grid)" }}
               interval="preserveStartEnd"
               height={18}
             />
             <YAxis
               domain={[lo, hi]}
               ticks={ticks}
-              width={48}
+              width={46}
               tickFormatter={(value: number) => formatMoney(value, 0)}
-              tick={{ fill: "var(--faint)", fontSize: 10 }}
+              tick={{ fill: "var(--faint)", fontSize: 9.5 }}
               tickLine={false}
               axisLine={false}
             />
 
+            {/* Ноль — смысловая ось, она чуть заметнее сетки. */}
             <ReferenceLine y={0} stroke="var(--border-strong)" strokeWidth={1} />
             <ReferenceLine
               x={entry}
-              stroke="var(--faint)"
-              strokeDasharray="2 3"
+              stroke="var(--border-strong)"
+              strokeDasharray="2 4"
               strokeWidth={1}
             />
             {knockoutVisible && (
@@ -233,7 +235,7 @@ export function PayoffChart({
                   value: "Нокаут",
                   position: "top",
                   fill: "var(--no)",
-                  fontSize: 10,
+                  fontSize: 9.5,
                 }}
               />
             )}
@@ -258,9 +260,9 @@ export function PayoffChart({
         </ResponsiveContainer>
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-faint">
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[10px] font-medium uppercase tracking-[0.06em] text-faint">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-px w-4 border-t border-dashed border-[color:var(--faint)]" />
+          <span className="h-px w-4 border-t border-dashed border-border-strong" />
           Вход <span className="tnum text-muted">{formatCents(entry)}</span>
         </span>
         {knockoutVisible ? (
@@ -271,7 +273,7 @@ export function PayoffChart({
         ) : (
           <span>Нокаут недостижим</span>
         )}
-        <span>{side === "LONG" ? "Прибыль при росте цены" : "Прибыль при падении цены"}</span>
+        <span>{side === "LONG" ? "Прибыль при росте" : "Прибыль при падении"}</span>
       </div>
     </div>
   );

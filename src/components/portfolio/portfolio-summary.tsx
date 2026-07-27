@@ -1,9 +1,10 @@
 "use client";
 
 import { Gauge, Plus, RotateCcw } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Hint } from "@/components/ui/hint";
+import { Stat } from "@/components/ui/stat";
 import { formatMoney, formatPercent, formatSignedMoney } from "@/lib/format";
 import {
   leverageTotals,
@@ -22,53 +23,37 @@ const DEPOSIT_AMOUNT = 1000;
 /** Стабильная пустышка: до гидратации показывать сохранённое нельзя. */
 const NO_LEVERAGE: Record<string, LeveragePosition> = {};
 
+/** До гидратации вместо цифр — прочерк: иначе сервер и клиент разойдутся. */
+const DASH = "—";
+
+type Tone = "neutral" | "yes" | "no" | "accent";
+
+function toneOf(value: number): Tone {
+  if (value > 0) return "yes";
+  if (value < 0) return "no";
+  return "neutral";
+}
+
 function toneClass(value: number): string {
   if (value > 0) return "text-yes";
   if (value < 0) return "text-no";
   return "text-text";
 }
 
-function Tile({
+/** Пара «подпись — число» в полоске плеча. */
+function Pair({
   label,
   value,
-  sub,
-  valueClass,
-  loading,
+  className,
 }: {
   label: string;
   value: string;
-  sub: ReactNode;
-  valueClass?: string;
-  loading: boolean;
+  className?: string;
 }) {
-  return (
-    <div className="rounded-xl border border-border bg-surface p-3.5 transition-colors hover:border-border-strong">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-faint">
-        {label}
-      </p>
-      {loading ? (
-        <>
-          <Skeleton className="mt-2 h-6 w-24" />
-          <Skeleton className="mt-2 h-3 w-16" />
-        </>
-      ) : (
-        <>
-          <p className={cn("tnum mt-1.5 text-xl font-semibold", valueClass)}>
-            {value}
-          </p>
-          <p className="tnum mt-0.5 text-[11px] text-muted">{sub}</p>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** Пара «подпись — число» в полоске плеча. */
-function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <span className="flex items-baseline gap-1.5">
       <span className="text-muted">{label}</span>
-      <span className={cn("tnum font-semibold text-text", tone)}>{value}</span>
+      <span className={cn("tnum font-semibold text-text", className)}>{value}</span>
     </span>
   );
 }
@@ -106,59 +91,135 @@ export function PortfolioSummary({ marks }: { marks: Record<string, number> }) {
   const returnPct = invested > 0 ? unrealized / invested : 0;
   const realizedTotal = realized + (leverageHydrated ? leverageRealized : 0);
 
+  const money = (value: number) => (ready ? formatMoney(value) : DASH);
+  const signed = (value: number) => (ready ? formatSignedMoney(value) : DASH);
+
   return (
-    <section className="space-y-3">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Tile
-          loading={!ready}
-          label="Стоимость портфеля"
-          value={formatMoney(equity)}
-          sub={
-            hasLeverage
-              ? `Позиции ${formatMoney(totals.value)} · плечо ${formatMoney(leverage.value)}`
-              : `Позиции ${formatMoney(totals.value)}`
-          }
-        />
-        <Tile
-          loading={!ready}
-          label="Кэш"
-          value={formatMoney(cash)}
-          sub={
+    <section className="card p-5 sm:p-6">
+      {/* Главное число экрана — стоимость счёта. Всё остальное объясняет,
+          из чего она сложилась, поэтому стоит строкой ниже и мельче. */}
+      <div className="rule flex flex-wrap items-start justify-between gap-x-8 gap-y-4 pb-5">
+        <div className="min-w-0">
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.1em] text-faint">
+            Стоимость портфеля
+          </p>
+          <p className="display tnum mt-2 text-[38px] leading-none text-text sm:text-[44px]">
+            {money(equity)}
+          </p>
+          <p className="tnum mt-2.5 text-[12.5px] leading-relaxed text-muted">
+            {ready ? (
+              <>
+                Позиции {formatMoney(totals.value)} · свободно {formatMoney(cash)}
+                {hasLeverage ? ` · плечо ${formatMoney(leverage.value)}` : ""}
+              </>
+            ) : (
+              "Читаем локальный счёт…"
+            )}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => deposit(DEPOSIT_AMOUNT)}
+          >
+            <Plus className="size-4" />
+            Пополнить на {formatMoney(DEPOSIT_AMOUNT, 0)}
+          </Button>
+
+          {confirming ? (
+            <div className="animate-fade-in flex items-center gap-1.5">
+              <span className="text-[11.5px] text-muted">
+                Стереть позиции, плечо и историю?
+              </span>
+              <Button
+                size="xs"
+                variant="danger"
+                onClick={() => {
+                  // Кошелёк общий: оставить плечевые позиции после сброса счёта
+                  // значило бы вернуть маржу дважды.
+                  resetLeverage();
+                  resetAll();
+                  setConfirming(false);
+                }}
+              >
+                Сбросить
+              </Button>
+              <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
+                Отмена
+              </Button>
+            </div>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
+              <RotateCcw className="size-3.5" />
+              Сбросить
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Показатели в ряд с разделителями. <StatRow/> здесь не подходит: он не
+          переносит строки, а на телефоне четыре показателя идут сеткой 2×2. */}
+      <div
+        className={cn(
+          "mt-5 grid grid-cols-2 gap-x-6 gap-y-5",
+          "sm:grid-cols-4 sm:gap-x-5",
+          "sm:[&>*+*]:border-l sm:[&>*+*]:border-border sm:[&>*+*]:pl-5",
+        )}
+      >
+        <Stat
+          label="Свободные деньги"
+          value={money(cash)}
+          hint={
             leverage.margin > 0
-              ? `Ещё ${formatMoney(leverage.margin)} в марже`
-              : "Свободно для сделок"
+              ? `Ещё ${formatMoney(leverage.margin)} держит маржа`
+              : "Готовы к сделкам"
           }
         />
-        <Tile
-          loading={!ready}
-          label="Нереализованный P&L"
-          value={formatSignedMoney(unrealized)}
-          valueClass={toneClass(unrealized)}
-          sub={`${formatPercent(returnPct)} к вложенному`}
+        <Stat
+          label="Нереализовано"
+          value={signed(unrealized)}
+          tone={ready ? toneOf(unrealized) : "neutral"}
+          hint={ready ? `${formatPercent(returnPct)} к вложенному` : "по открытым позициям"}
         />
-        <Tile
-          loading={!ready}
-          label="Реализованный P&L"
-          value={formatSignedMoney(realizedTotal)}
-          valueClass={toneClass(realizedTotal)}
-          sub={`Сделок: ${hydrated ? fillsCount : 0}`}
+        <Stat
+          label="Реализовано"
+          value={signed(realizedTotal)}
+          tone={ready ? toneOf(realizedTotal) : "neutral"}
+          hint={`Сделок: ${hydrated ? fillsCount : 0}`}
+        />
+        <Stat
+          label="Экспозиция плеча"
+          value={money(leverage.exposure)}
+          hint={
+            ready && leverage.open > 0
+              ? `${leverage.open} открыто · маржа ${formatMoney(leverage.margin)}`
+              : "Плечевых позиций нет"
+          }
         />
       </div>
 
       {ready && hasLeverage && (
-        <div className="animate-fade-in flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-border bg-surface px-3.5 py-2.5 text-xs">
-          <span className="flex items-center gap-1.5 font-semibold text-text">
-            <Gauge className="size-3.5 text-muted" aria-hidden />
+        <div className="animate-fade-in mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[12px] bg-bg-subtle px-3.5 py-3 text-[12px]">
+          <span className="flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.1em] text-muted">
+            <Gauge className="size-3.5" aria-hidden />
             Плечо
+            {/* Регистр и трекинг капители внутрь подсказки не наследуем. */}
+            <Hint className="normal-case tracking-normal">
+              Экспозиция — маржа, умноженная на плечо: столько денег работает на
+              рынке. Потерять можно только маржу: на нокаут-цене позиция
+              закрывается автоматически.
+            </Hint>
           </span>
-          <Stat label="Экспозиция" value={formatMoney(leverage.exposure)} />
-          <Stat label="Маржа" value={formatMoney(leverage.margin)} />
-          <Stat
+          <Pair label="Маржа" value={formatMoney(leverage.margin)} />
+          <Pair label="Заёмное" value={formatMoney(leverage.borrowed)} />
+          <Pair
             label="P&L"
             value={formatSignedMoney(leverage.unrealized)}
-            tone={toneClass(leverage.unrealized)}
+            className={toneClass(leverage.unrealized)}
           />
-          <span className="tnum ml-auto text-muted">
+          <span className="tnum ml-auto text-faint">
             {leverage.open} откр.
             {leverage.knockedOut > 0
               ? ` · ${leverage.knockedOut} сгорело на ${formatMoney(leverage.knockedOutMargin)}`
@@ -166,45 +227,6 @@ export function PortfolioSummary({ marks }: { marks: Record<string, number> }) {
           </span>
         </div>
       )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          variant="secondary"
-          className="rounded-xl"
-          onClick={() => deposit(DEPOSIT_AMOUNT)}
-        >
-          <Plus className="size-4" />
-          Пополнить на {formatMoney(DEPOSIT_AMOUNT, 0)}
-        </Button>
-
-        {confirming ? (
-          <div className="animate-fade-in flex items-center gap-1.5">
-            <span className="text-xs text-muted">Стереть позиции, плечо и историю?</span>
-            <Button
-              size="xs"
-              variant="danger"
-              onClick={() => {
-                // Кошелёк общий: оставить плечевые позиции после сброса счёта
-                // значило бы вернуть маржу дважды.
-                resetLeverage();
-                resetAll();
-                setConfirming(false);
-              }}
-            >
-              Сбросить
-            </Button>
-            <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
-              Отмена
-            </Button>
-          </div>
-        ) : (
-          <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
-            <RotateCcw className="size-3.5" />
-            Сбросить портфель
-          </Button>
-        )}
-      </div>
     </section>
   );
 }

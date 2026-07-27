@@ -1,6 +1,13 @@
 "use client";
 
-import { CalendarClock, ChevronDown, ExternalLink, Lightbulb, Scale } from "lucide-react";
+/**
+ * Правила разрешения рынка. Экран смысловой, а не декоративный: сначала точная
+ * формулировка вопроса и два факта (по чему и когда подводится итог), затем
+ * полный текст условий со сворачиванием, затем короткая памятка «как читать».
+ * Логика прежняя — переодета типографика.
+ */
+
+import { CalendarClock, ChevronDown, ExternalLink, Scale } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -64,15 +71,15 @@ function Fact({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 gap-2.5">
-      <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+    <div className="flex min-w-0 gap-3">
+      <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[10px] bg-accent-soft text-accent">
         <Icon className="size-3.5" />
       </span>
       <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-faint">
+        <p className="text-[10.5px] font-medium uppercase leading-none tracking-[0.08em] text-faint">
           {label}
         </p>
-        <div className="mt-0.5 text-sm leading-snug">{children}</div>
+        <div className="mt-1.5 text-[12.5px] leading-snug">{children}</div>
       </div>
     </div>
   );
@@ -81,7 +88,7 @@ function Fact({
 const READING_HINTS = [
   "Цена исхода — это оценка его вероятности: 62¢ означают 62%.",
   "После закрытия верный исход гасится по $1, остальные — по $0.",
-  "Итог подводится строго по тексту ниже и по указанному источнику, а не по общему впечатлению от новостей.",
+  "Итог подводится строго по тексту выше и по указанному источнику, а не по общему впечатлению от новостей.",
 ];
 
 export function MarketRules({
@@ -112,17 +119,17 @@ export function MarketRules({
   const collapsed = overflows && !expanded;
 
   return (
-    <div className="space-y-4 py-1">
-      <div className="rounded-xl border border-border bg-surface p-3.5">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-faint">
+    <div className="space-y-5">
+      <div className="card p-4 sm:p-5">
+        <p className="text-[10.5px] font-medium uppercase leading-none tracking-[0.08em] text-faint">
           Вопрос рынка
         </p>
-        <p className="mt-1 text-sm font-semibold leading-snug text-text">
+        <p className="display mt-2.5 text-[19px] leading-snug text-text sm:text-[21px]">
           {market.question}
         </p>
 
-        <div className="mt-3.5 grid gap-3.5 border-t border-border pt-3.5 sm:grid-cols-2">
-          <Fact icon={Scale} label="Источник разрешения">
+        <div className="mt-4 grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
+          <Fact icon={Scale} label="источник разрешения">
             {source ? (
               <SourceLink source={source} />
             ) : (
@@ -132,7 +139,7 @@ export function MarketRules({
             )}
           </Fact>
 
-          <Fact icon={CalendarClock} label="Окончание">
+          <Fact icon={CalendarClock} label="окончание">
             <span className="tnum text-text">{formatDate(endDate)}</span>
             <span className="text-faint">
               {closed ? " · рынок закрыт" : timeLeft === "—" ? "" : ` · ${timeLeft}`}
@@ -142,18 +149,18 @@ export function MarketRules({
       </div>
 
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-faint">
+        <h3 className="text-[10.5px] font-medium uppercase leading-none tracking-[0.08em] text-faint">
           Условия разрешения
         </h3>
 
         {text ? (
           <>
-            <div className="relative mt-2">
+            <div className="relative mt-3">
               <div
                 ref={bodyRef}
                 className={cn("overflow-hidden", collapsed && "max-h-[320px]")}
               >
-                <div className="space-y-3 text-sm leading-relaxed text-muted">
+                <div className="space-y-3.5 text-[13px] leading-relaxed text-muted">
                   {paragraphs.map((paragraph, index) => (
                     <p key={index} className="whitespace-pre-line">
                       {linkify(paragraph)}
@@ -171,7 +178,7 @@ export function MarketRules({
               <button
                 type="button"
                 onClick={() => setExpanded((v) => !v)}
-                className="mt-2 inline-flex cursor-pointer items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-accent-hover"
+                className="mt-3 inline-flex cursor-pointer items-center gap-1 text-[12.5px] font-medium text-accent transition-colors hover:text-accent-hover"
               >
                 {expanded ? "Свернуть" : "Показать полностью"}
                 <ChevronDown
@@ -181,7 +188,7 @@ export function MarketRules({
             )}
           </>
         ) : (
-          <p className="mt-2 text-sm leading-relaxed text-muted">
+          <p className="mt-3 text-[13px] leading-relaxed text-muted">
             Организатор не опубликовал развёрнутые условия для этого рынка.
             Ориентируйтесь на формулировку вопроса выше — исход определяется
             буквально по ней.
@@ -189,16 +196,15 @@ export function MarketRules({
         )}
       </section>
 
-      <aside className="rounded-xl border border-border bg-bg-subtle p-3.5">
-        <p className="flex items-center gap-1.5 text-xs font-semibold text-text">
-          <Lightbulb className="size-3.5 text-accent" aria-hidden />
+      <aside className="rounded-[16px] border border-border bg-bg-subtle p-4">
+        <p className="text-[10.5px] font-medium uppercase leading-none tracking-[0.08em] text-faint">
           Как это читать
         </p>
-        <ul className="mt-2 space-y-1.5">
+        <ul className="mt-2.5 space-y-2">
           {READING_HINTS.map((hint) => (
             <li
               key={hint}
-              className="relative pl-3.5 text-xs leading-relaxed text-muted before:absolute before:left-0 before:top-[0.55em] before:size-1 before:rounded-full before:bg-faint"
+              className="relative pl-4 text-[12px] leading-relaxed text-muted before:absolute before:left-0 before:top-[0.6em] before:size-1 before:rounded-full before:bg-faint"
             >
               {hint}
             </li>

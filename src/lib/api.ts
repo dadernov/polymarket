@@ -13,6 +13,7 @@ import type {
   OrderBook,
   Paginated,
   PricePoint,
+  SparklineMap,
   Tag,
   Trade,
 } from "./types";
@@ -47,6 +48,14 @@ export function eventsPath(params: EventsParams = {}): string {
   return `/api/events${qs ? `?${qs}` : ""}`;
 }
 
+/**
+ * Набор токенов, а не список: дубликаты убраны, порядок фиксирован.
+ * Иначе один и тот же экран даёт разные ключи и URL на каждый ре-рендер.
+ */
+function tokenSet(tokenIds: string[]): string[] {
+  return [...new Set(tokenIds.filter(Boolean))].sort();
+}
+
 export const api = {
   events: (params: EventsParams = {}, signal?: AbortSignal) =>
     getJSON<Paginated<MarketEvent>>(eventsPath(params), signal),
@@ -70,6 +79,13 @@ export const api = {
 
   book: (tokenId: string, signal?: AbortSignal) =>
     getJSON<OrderBook>(`/api/book?tokenId=${tokenId}`, signal),
+
+  /** Пакетом на весь видимый список — по запросу на карточку апстрим не выдержит. */
+  sparklines: (tokenIds: string[], signal?: AbortSignal): Promise<SparklineMap> => {
+    const ids = tokenSet(tokenIds);
+    if (!ids.length) return Promise.resolve({});
+    return getJSON<SparklineMap>(`/api/sparklines?tokenIds=${ids.join(",")}`, signal);
+  },
 
   trades: (
     params: { conditionId?: string; user?: string; limit?: number; minAmount?: number },
@@ -109,6 +125,8 @@ export const queryKeys = {
   priceHistory: (tokenId: string, interval: ChartInterval) =>
     ["price-history", tokenId, interval] as const,
   book: (tokenId: string) => ["book", tokenId] as const,
+  sparklines: (tokenIds: string[]) =>
+    ["sparklines", tokenSet(tokenIds).join(",")] as const,
   trades: (params: Record<string, unknown>) => ["trades", params] as const,
   holders: (conditionId: string) => ["holders", conditionId] as const,
   leaderboard: (type: string, window: string) =>

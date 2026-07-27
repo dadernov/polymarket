@@ -6,9 +6,10 @@ import { useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Stat, StatRow } from "@/components/ui/stat";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { api, queryKeys } from "@/lib/api";
-import { formatMoney, shortenAddress, traderName } from "@/lib/format";
+import { formatMoney, formatVolume, shortenAddress, traderName } from "@/lib/format";
 import type {
   LeaderboardEntry,
   LeaderboardType,
@@ -28,12 +29,24 @@ const WINDOWS: { value: LeaderboardWindow; label: string }[] = [
   { value: "all", label: "Всё" },
 ];
 
-/** Золото / серебро / бронза. Бронзу собираем из приглушённого warn. */
+/** Капительная шапка столбца. */
+const TH =
+  "px-4 py-3 text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint whitespace-nowrap";
+
+/**
+ * Золото / серебро / бронза. Светофорных цветов на подиуме нет: медали — это
+ * тёплый warn разной насыщенности плюс нейтральная бумага для серебра.
+ */
 const MEDALS: Record<number, string> = {
-  1: "bg-[color:var(--warn)]/15 text-[color:var(--warn)] ring-1 ring-[color:var(--warn)]/35",
-  2: "bg-surface-hover text-muted ring-1 ring-border-strong",
-  3: "bg-[color:var(--warn)]/10 text-[color:var(--warn)] opacity-70 ring-1 ring-[color:var(--warn)]/20",
+  1: "bg-warn-soft text-warn ring-1 ring-warn/35",
+  2: "bg-bg-subtle text-muted ring-1 ring-border-strong",
+  3: "bg-bg-subtle text-warn ring-1 ring-warn/20",
 };
+
+/** Компактная сумма со знаком: `$1.2m`, `-$430k`. */
+function compactSigned(value: number): string {
+  return value < 0 ? `-${formatVolume(-value)}` : formatVolume(value);
+}
 
 function amountClass(type: LeaderboardType, amount: number): string {
   if (type !== "profit") return "text-text";
@@ -42,12 +55,17 @@ function amountClass(type: LeaderboardType, amount: number): string {
   return "text-text";
 }
 
-function RankBadge({ rank, size = "sm" }: { rank: number; size?: "sm" | "lg" }) {
+/** Номер места: на подиуме — крупной антиквой, в таблице — мелкой плашкой. */
+function RankBadge({ rank, size = "sm" }: { rank: number; size?: "sm" | "md" | "lg" }) {
   return (
     <span
       className={cn(
-        "tnum inline-flex items-center justify-center rounded-full font-semibold",
-        size === "lg" ? "size-7 text-xs" : "size-6 text-[11px]",
+        "display tnum inline-flex items-center justify-center rounded-full",
+        size === "lg"
+          ? "size-10 text-[20px]"
+          : size === "md"
+            ? "size-8 text-[16px]"
+            : "size-6 text-[12px]",
         MEDALS[rank] ?? "text-faint",
       )}
     >
@@ -56,7 +74,11 @@ function RankBadge({ rank, size = "sm" }: { rank: number; size?: "sm" | "lg" }) 
   );
 }
 
-/** Тумба призёров — только на широких экранах, на мобильных хватает таблицы. */
+/**
+ * Тумба призёров. Первое место выше и крупнее остальных — иерархия задаётся
+ * размером плашки и кегля числа, а не цветной рамкой. На узких экранах тумбы
+ * нет: там те же три места читаются первыми строками таблицы.
+ */
 function Podium({
   entries,
   type,
@@ -64,49 +86,65 @@ function Podium({
   entries: LeaderboardEntry[];
   type: LeaderboardType;
 }) {
-  if (entries.length < 3) return null;
-  // Победителя ставим в центр: 2 — 1 — 3.
-  const order = [entries[1], entries[0], entries[2]];
+  // Победителя ставим в центр: 2 — 1 — 3. Место берём по позиции в списке,
+  // а не из поля rank: подиум не должен рассыпаться на нестандартной нумерации.
+  const order = [
+    { entry: entries[1], place: 2 },
+    { entry: entries[0], place: 1 },
+    { entry: entries[2], place: 3 },
+  ];
+  const label = type === "volume" ? "Объём" : "Прибыль";
 
   return (
-    <div className="hidden grid-cols-3 items-end gap-3 sm:grid">
-      {order.map((entry) => {
-        const first = entry.rank === 1;
+    <div className="hidden grid-cols-3 items-end gap-3 sm:grid lg:gap-4">
+      {order.map(({ entry, place }) => {
+        const first = place === 1;
+        const third = place === 3;
+
         return (
-          <div
+          <article
             key={entry.proxyWallet}
             className={cn(
-              "flex flex-col items-center gap-1.5 rounded-xl border bg-surface p-4 text-center",
-              "transition-colors hover:border-border-strong",
-              first
-                ? "border-[color:var(--warn)]/40 pb-6 pt-6 shadow-card"
-                : "border-border",
+              // Тумба некликабельна, поэтому без card-interactive.
+              "card flex flex-col items-center px-4 text-center",
+              first ? "py-7" : third ? "py-4" : "py-5",
             )}
           >
-            <RankBadge rank={entry.rank} size={first ? "lg" : "sm"} />
+            <RankBadge rank={place} size={first ? "lg" : third ? "sm" : "md"} />
+
             <Avatar
               src={entry.profileImage}
               name={entry.name}
               seed={entry.proxyWallet}
-              size={first ? 56 : 44}
-              className="mt-1"
+              size={first ? 64 : third ? 44 : 52}
+              className="mt-3"
             />
-            <p className="mt-1 line-clamp-1 text-sm font-semibold text-text">
+
+            <p
+              className={cn(
+                "mt-3 line-clamp-1 w-full font-semibold text-text",
+                first ? "text-[15px]" : "text-[13.5px]",
+              )}
+            >
               {traderName(entry)}
             </p>
-            <p className="font-mono text-[11px] text-faint">
+            <p className="mt-0.5 font-mono text-[10.5px] text-faint">
               {shortenAddress(entry.proxyWallet)}
+            </p>
+
+            <p className="mt-4 text-[10px] font-medium uppercase tracking-[0.1em] text-faint">
+              {label}
             </p>
             <p
               className={cn(
-                "tnum mt-1 font-semibold",
-                first ? "text-lg" : "text-base",
+                "display tnum mt-1.5 leading-none",
+                first ? "text-[34px]" : third ? "text-[22px]" : "text-[26px]",
                 amountClass(type, entry.amount),
               )}
             >
               {formatMoney(entry.amount, 0)}
             </p>
-          </div>
+          </article>
         );
       })}
     </div>
@@ -124,23 +162,34 @@ export function LeaderboardTable() {
   });
 
   const entries = data ?? [];
+  const podium = entries.length >= 3;
+  const sum = entries.reduce((acc, entry) => acc + entry.amount, 0);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <SegmentedControl items={TYPES} value={type} onChange={setType} />
         <SegmentedControl items={WINDOWS} value={timeWindow} onChange={setTimeWindow} />
-        <span className="ml-auto text-xs text-faint">
-          {type === "volume" ? "Оборот за период" : "Чистый результат за период"}
-        </span>
+
+        {entries.length > 0 && (
+          <StatRow className="ml-auto hidden md:flex">
+            <Stat label="Участников" value={entries.length} size="sm" />
+            <Stat
+              label={type === "volume" ? "Оборот в рейтинге" : "Результат в рейтинге"}
+              value={compactSigned(sum)}
+              size="sm"
+              tone={type === "profit" && sum < 0 ? "no" : "neutral"}
+            />
+          </StatRow>
+        )}
       </div>
 
       {isPending ? (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="card overflow-hidden">
           {Array.from({ length: 8 }, (_, i) => (
             <div
               key={i}
-              className="flex items-center gap-3 border-b border-border p-3 last:border-0"
+              className="flex items-center gap-3 border-b border-border p-4 last:border-0"
             >
               <Skeleton className="size-6 rounded-full" />
               <Skeleton className="size-8 rounded-full" />
@@ -150,7 +199,7 @@ export function LeaderboardTable() {
           ))}
         </div>
       ) : isError ? (
-        <div className="rounded-xl border border-border bg-surface">
+        <div className="card">
           <EmptyState
             icon={<Trophy />}
             title="Рейтинг не загрузился"
@@ -167,7 +216,7 @@ export function LeaderboardTable() {
           />
         </div>
       ) : entries.length === 0 ? (
-        <div className="rounded-xl border border-border bg-surface">
+        <div className="card">
           <EmptyState
             icon={<Trophy />}
             title="За этот период пусто"
@@ -176,31 +225,36 @@ export function LeaderboardTable() {
         </div>
       ) : (
         <>
-          <Podium entries={entries} type={type} />
+          {podium && <Podium entries={entries} type={type} />}
 
-          <div className="overflow-hidden rounded-xl border border-border bg-surface">
+          <div className="card overflow-hidden">
             <div className="thin-scrollbar max-h-[70vh] overflow-auto">
-              <table className="w-full border-collapse text-sm">
+              {/* table-fixed: среди имён встречаются адреса в 55 символов,
+                  и при автоширине они выдавливают колонку суммы за экран. */}
+              <table className="w-full table-fixed border-collapse text-sm">
                 <thead className="sticky top-0 z-10 bg-surface">
-                  <tr className="border-b border-border text-xs font-medium text-muted">
-                    <th className="w-14 px-3 py-2.5 text-left font-medium">#</th>
-                    <th className="px-3 py-2.5 text-left font-medium">Трейдер</th>
-                    <th className="hidden px-3 py-2.5 text-left font-medium sm:table-cell">
-                      Кошелёк
-                    </th>
-                    <th className="px-3 py-2.5 text-right font-medium">
+                  <tr className="border-b border-border">
+                    <th className={cn(TH, "w-12 text-left sm:w-14")}>#</th>
+                    <th className={cn(TH, "text-left")}>Трейдер</th>
+                    <th className={cn(TH, "hidden w-40 text-left sm:table-cell")}>Кошелёк</th>
+                    <th className={cn(TH, "w-28 text-right sm:w-36")}>
                       {type === "volume" ? "Объём" : "Прибыль"}
                     </th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {entries.map((entry) => (
+                  {entries.map((entry, index) => (
                     <tr
                       key={entry.proxyWallet}
-                      className="border-b border-border transition-colors last:border-0 hover:bg-surface-hover"
+                      className={cn(
+                        "border-b border-border transition-colors last:border-0 hover:bg-surface-hover",
+                        // Призёров на широких экранах показывает тумба —
+                        // повторять их строками значит дублировать данные.
+                        podium && index < 3 && "sm:hidden",
+                      )}
                     >
-                      <td className="px-3 py-2.5">
+                      <td className="px-4 py-3">
                         {entry.rank <= 3 ? (
                           <RankBadge rank={entry.rank} />
                         ) : (
@@ -209,25 +263,25 @@ export function LeaderboardTable() {
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2.5">
+                      <td className="px-4 py-3">
+                        <div className="flex min-w-0 items-center gap-2.5">
                           <Avatar
                             src={entry.profileImage}
                             name={entry.name}
                             seed={entry.proxyWallet}
                             size={28}
                           />
-                          <span className="line-clamp-1 font-medium text-text">
+                          <span className="truncate text-[13.5px] font-medium text-text">
                             {traderName(entry)}
                           </span>
                         </div>
                       </td>
-                      <td className="hidden px-3 py-2.5 font-mono text-xs text-faint sm:table-cell">
+                      <td className="hidden truncate px-4 py-3 font-mono text-[11.5px] text-faint sm:table-cell">
                         {shortenAddress(entry.proxyWallet)}
                       </td>
                       <td
                         className={cn(
-                          "tnum px-3 py-2.5 text-right font-semibold",
+                          "tnum px-4 py-3 text-right font-semibold",
                           amountClass(type, entry.amount),
                         )}
                       >

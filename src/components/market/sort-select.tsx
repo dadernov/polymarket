@@ -1,8 +1,8 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState, useTransition } from "react";
+import { Suspense, useEffect, useRef, useState, useTransition } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/empty-state";
 import type { EventSort } from "@/lib/types";
@@ -11,14 +11,15 @@ import { cn } from "@/lib/utils";
 /**
  * Подписи к ключам сортировки. Сами ключи (и правило `ascending`) страницы
  * разбирают у себя: это «use client»-модуль, из серверного компонента его
- * экспорты вызвать нельзя — RSC отдаёт вместо них ссылки на клиент.
+ * экспорты вызвать нельзя — RSC отдаёт вместо них ссылки на клиент. Поэтому
+ * набор ключей продублирован в src/app/markets/page.tsx — менять оба места.
  */
 const SORT_OPTIONS: readonly { value: EventSort; label: string }[] = [
-  { value: "volume24hr", label: "Объём за 24ч" },
+  { value: "volume24hr", label: "Объём за 24 часа" },
   { value: "volume", label: "Общий объём" },
   { value: "liquidity", label: "Ликвидность" },
   { value: "endDate", label: "Скоро закрытие" },
-  { value: "competitive", label: "Конкурентные" },
+  { value: "competitive", label: "Спорность исхода" },
 ] as const;
 
 const DEFAULT_SORT: EventSort = "volume24hr";
@@ -27,11 +28,19 @@ function currentSort(value: string | null): EventSort {
   return SORT_OPTIONS.find((option) => option.value === value)?.value ?? DEFAULT_SORT;
 }
 
+/** Единая гильза для всех контролов каталога: одна высота, один радиус. */
 const CONTROL =
-  "flex h-9 shrink-0 items-center rounded-xl border text-[13px] font-medium transition-colors";
+  "flex h-10 shrink-0 items-center rounded-[12px] border text-[13.5px] font-medium transition-colors";
+
+/** Капительная подпись внутри контрола — «издательская» метка поля. */
+const CAPTION =
+  "text-[9.5px] font-semibold uppercase leading-none tracking-[0.16em] text-faint";
+
+/** Задержка перед записью поискового запроса в адрес: одна буква — не запрос. */
+const SEARCH_DEBOUNCE = 400;
 
 /**
- * Обновление одного параметра в адресной строке с сохранением остальных.
+ * Обновление параметров в адресной строке с сохранением остальных.
  * Смена фильтра — серверный переход (страница перечитывает searchParams и
  * заново идёт за данными), а не мгновенное состояние: `isPending` даёт
  * компонентам показать это явно, вместо замороженного на секунду интерфейса.
@@ -42,10 +51,12 @@ function useParamWriter() {
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
-  const write = (key: string, value: string | null) => {
+  const write = (patch: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (value === null) params.delete(key);
-    else params.set(key, value);
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null) params.delete(key);
+      else params.set(key, value);
+    }
     // Смена фильтра всегда возвращает ленту в начало.
     params.delete("offset");
     const qs = params.toString();
@@ -83,15 +94,18 @@ function SortSelectInner({ className }: { className?: string }) {
         className,
       )}
     >
-      <span className="sr-only">Сортировка</span>
+      <span className={cn(CAPTION, "mr-2 hidden shrink-0 sm:block")} aria-hidden>
+        сортировка
+      </span>
       <select
+        aria-label="Сортировка ленты"
         value={current}
         onChange={(event) => {
           const next = event.target.value as EventSort;
           setOptimisticSort(next);
-          write("sort", next === DEFAULT_SORT ? null : next);
+          write({ sort: next === DEFAULT_SORT ? null : next });
         }}
-        className="cursor-pointer appearance-none bg-transparent pr-1 text-[13px] font-medium text-text outline-none"
+        className="cursor-pointer appearance-none bg-transparent pr-1 text-[13.5px] font-semibold text-text outline-none"
       >
         {SORT_OPTIONS.map((option) => (
           <option key={option.value} value={option.value} className="bg-surface text-text">
@@ -111,7 +125,7 @@ function SortSelectInner({ className }: { className?: string }) {
 /** Селект сортировки ленты. Значение хранится в search-параметре `sort`. */
 export function SortSelect({ className }: { className?: string }) {
   return (
-    <Suspense fallback={<Skeleton className="h-9 w-40 rounded-xl" />}>
+    <Suspense fallback={<Skeleton className="h-10 w-52 rounded-[12px]" />}>
       <SortSelectInner className={className} />
     </Suspense>
   );
@@ -135,13 +149,16 @@ function ClosedToggleInner({ className }: { className?: string }) {
       type="button"
       role="switch"
       aria-checked={closed}
+      aria-label="Показывать завершённые рынки"
       onClick={() => {
         setOptimisticClosed(!closed);
-        write("closed", closed ? null : "true");
+        // Архив и поиск живут в разных апстримах: поиск отдаёт только активные
+        // события, поэтому при переходе в архив запрос сбрасываем.
+        write({ closed: closed ? null : "true", q: null });
       }}
       className={cn(
         CONTROL,
-        "cursor-pointer gap-2 px-3 transition-opacity",
+        "cursor-pointer gap-2.5 px-3 transition-opacity",
         closed
           ? "border-accent bg-accent-soft text-accent"
           : "border-border bg-surface text-muted hover:border-border-strong hover:text-text",
@@ -151,19 +168,21 @@ function ClosedToggleInner({ className }: { className?: string }) {
     >
       <span
         className={cn(
-          "relative h-4 w-7 rounded-full transition-colors",
+          "relative h-4 w-7 shrink-0 rounded-full transition-colors",
           closed ? "bg-accent" : "bg-border-strong",
         )}
         aria-hidden
       >
         <span
           className={cn(
-            "absolute top-0.5 size-3 rounded-full bg-white transition-[left] duration-150",
+            "absolute top-0.5 size-3 rounded-full bg-bg transition-[left] duration-150",
             closed ? "left-3.5" : "left-0.5",
           )}
         />
       </span>
-      Завершённые
+      <span className="text-[10.5px] font-semibold uppercase leading-none tracking-[0.1em]">
+        Завершённые
+      </span>
       {isPending && <Spinner className="size-3.5" />}
     </button>
   );
@@ -172,8 +191,121 @@ function ClosedToggleInner({ className }: { className?: string }) {
 /** Переключатель «показывать закрытые рынки» — параметр `closed`. */
 export function ClosedToggle({ className }: { className?: string }) {
   return (
-    <Suspense fallback={<Skeleton className="h-9 w-36 rounded-xl" />}>
+    <Suspense fallback={<Skeleton className="h-10 w-44 rounded-[12px]" />}>
       <ClosedToggleInner className={className} />
+    </Suspense>
+  );
+}
+
+function MarketSearchInner({ className }: { className?: string }) {
+  const searchParams = useSearchParams();
+  const { write, isPending } = useParamWriter();
+  const urlQuery = searchParams.get("q") ?? "";
+
+  // Поле ввода живёт своим состоянием: буквы должны появляться мгновенно,
+  // а в адрес запрос уходит с задержкой, иначе апстрим получит запрос на
+  // каждое нажатие клавиши.
+  const [draft, setDraft] = useState(urlQuery);
+  // Что мы сами последним отправили в адрес. Без этого наша же отложенная
+  // запись, доехав до страницы, затирала бы уже набранный дальше текст.
+  const [sent, setSent] = useState(urlQuery);
+  // Сверка во время рендера, а не в эффекте (линтер запрещает setState в
+  // эффекте): реагируем только на чужие изменения адреса — «назад/вперёд»,
+  // сброс фильтров, переключение архива.
+  const [prevUrlQuery, setPrevUrlQuery] = useState(urlQuery);
+  if (urlQuery !== prevUrlQuery) {
+    setPrevUrlQuery(urlQuery);
+    if (urlQuery !== sent) {
+      setDraft(urlQuery);
+      setSent(urlQuery);
+    }
+  }
+
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  const commit = (value: string) => {
+    if (timer.current) clearTimeout(timer.current);
+    const trimmed = value.trim();
+    if (trimmed === sent) return;
+    setSent(trimmed);
+    // Поиск отдаёт только активные события: оставить включённым переключатель
+    // архива значило бы показывать состояние, которого в подборке нет.
+    write(trimmed ? { q: trimmed, closed: null } : { q: null });
+  };
+
+  const schedule = (value: string) => {
+    setDraft(value);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => commit(value), SEARCH_DEBOUNCE);
+  };
+
+  return (
+    <form
+      role="search"
+      onSubmit={(event) => {
+        event.preventDefault();
+        commit(draft);
+      }}
+      className={cn(
+        "relative flex h-10 min-w-0 items-center rounded-[12px] border border-border bg-surface",
+        "transition-colors focus-within:border-border-strong",
+        className,
+      )}
+    >
+      <Search className="pointer-events-none absolute left-3 size-4 text-faint" aria-hidden />
+      <input
+        type="text"
+        value={draft}
+        onChange={(event) => schedule(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && draft) {
+            setDraft("");
+            commit("");
+          }
+        }}
+        placeholder="Найти рынок по названию"
+        aria-label="Поиск по каталогу рынков"
+        autoComplete="off"
+        className={cn(
+          "h-full w-full min-w-0 rounded-[12px] bg-transparent pl-9 pr-9",
+          "text-[13.5px] font-medium text-text outline-none placeholder:font-normal placeholder:text-faint",
+        )}
+      />
+      {isPending ? (
+        <Spinner className="pointer-events-none absolute right-3 size-3.5 text-faint" />
+      ) : (
+        draft && (
+          <button
+            type="button"
+            onClick={() => {
+              setDraft("");
+              commit("");
+            }}
+            aria-label="Очистить поиск"
+            className="absolute right-2 flex size-6 cursor-pointer items-center justify-center rounded-full text-faint transition-colors hover:bg-surface-hover hover:text-text"
+          >
+            <X className="size-3.5" aria-hidden />
+          </button>
+        )
+      )}
+    </form>
+  );
+}
+
+/**
+ * Поиск внутри каталога. Запрос хранится в параметре `q`, поэтому подборку
+ * можно переслать ссылкой — в отличие от диалога поиска в шапке.
+ */
+export function MarketSearch({ className }: { className?: string }) {
+  return (
+    <Suspense fallback={<Skeleton className={cn("h-10 rounded-[12px]", className)} />}>
+      <MarketSearchInner className={className} />
     </Suspense>
   );
 }

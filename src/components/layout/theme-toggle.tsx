@@ -23,10 +23,10 @@ export function ThemeToggle({
   const isDark = mounted ? resolvedTheme === "dark" : true;
 
   const base = cn(
-    "inline-flex cursor-pointer items-center gap-2 rounded-xl transition-colors",
+    "inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full transition-colors",
     "text-muted hover:bg-surface-hover hover:text-text",
     withLabel
-      ? "h-9 w-full px-3 text-sm font-medium"
+      ? "h-9 w-full px-3.5 text-[13px] font-medium"
       : "size-9 justify-center",
     className,
   );

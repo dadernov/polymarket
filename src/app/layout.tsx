@@ -1,15 +1,20 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { CategoryBar } from "@/components/layout/category-bar";
 import { Footer } from "@/components/layout/footer";
 import { MobileNav } from "@/components/layout/mobile-nav";
-import { Sidebar } from "@/components/layout/sidebar";
 import { TopNav } from "@/components/layout/top-nav";
 
 const inter = Inter({
   variable: "--font-inter",
+  subsets: ["latin", "cyrillic"],
+  display: "swap",
+});
+
+const display = Playfair_Display({
+  variable: "--font-display",
   subsets: ["latin", "cyrillic"],
   display: "swap",
 });
@@ -38,30 +43,30 @@ function siteUrl(): URL {
 export const metadata: Metadata = {
   metadataBase: siteUrl(),
   title: {
-    default: "Polymarket — рынки предсказаний",
-    template: "%s · Polymarket",
+    default: "Кворум — рынки вероятностей",
+    template: "%s · Кворум",
   },
   description:
-    "Торгуйте вероятностями событий: политика, спорт, крипта и экономика. Живые котировки, стакан заявок и графики на данных Polymarket.",
-  applicationName: "Polymarket",
+    "Читайте вероятности событий: политика, спорт, крипта и экономика. Живые котировки, стакан заявок и графики на публичных данных Polymarket.",
+  applicationName: "Кворум",
   keywords: [
     "рынки предсказаний",
     "prediction markets",
-    "Polymarket",
-    "ставки на события",
-    "вероятности",
+    "вероятности событий",
+    "котировки",
+    "Polymarket API",
   ],
   openGraph: {
     type: "website",
     locale: "ru_RU",
-    siteName: "Polymarket",
-    title: "Polymarket — рынки предсказаний",
+    siteName: "Кворум",
+    title: "Кворум — рынки вероятностей",
     description:
       "Живые вероятности по политике, спорту, крипте и экономике. Стакан заявок, графики и лидерборд трейдеров.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Polymarket — рынки предсказаний",
+    title: "Кворум — рынки вероятностей",
     description: "Живые вероятности по политике, спорту, крипте и экономике.",
   },
   robots: { index: true, follow: true },
@@ -73,13 +78,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" suppressHydrationWarning className={inter.variable}>
+    <html
+      lang="ru"
+      suppressHydrationWarning
+      className={`${inter.variable} ${display.variable}`}
+    >
       <body className="min-h-screen bg-bg font-sans text-text antialiased">
         <Providers>
-          <Sidebar />
-
-          {/* Слева — место под фиксированный сайдбар, снизу — под мобильную панель. */}
-          <div className="flex min-h-screen flex-col pb-16 lg:pb-0 lg:pl-[232px]">
+          {/* Сайдбара больше нет: одна полоса контента на всю ширину.
+              Снизу — место под мобильную панель навигации. */}
+          <div className="flex min-h-screen flex-col pb-16 lg:pb-0">
             <TopNav />
             <CategoryBar />
             <main className="flex-1">{children}</main>

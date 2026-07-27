@@ -71,7 +71,7 @@ export default async function Page(props: PageProps<"/event/[slug]">) {
   const related = await fetchRelatedEvents(event, 8).catch(() => []);
 
   return (
-    <Container className="py-5 lg:py-6">
+    <Container className="py-6 lg:py-9">
       <EventView
         event={event}
         related={related}

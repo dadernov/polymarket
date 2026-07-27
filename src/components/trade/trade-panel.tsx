@@ -5,6 +5,11 @@
  * со страницы события, — размер заявки, зафиксированную котировку по стакану
  * и бумажный портфель.
  *
+ * Порядок экрана отвечает порядку мысли: что покупаем → сколько → СКОЛЬКО
+ * ПОЛУЧИМ, если угадали → мелким шрифтом чем это обойдётся. Выплата — герой
+ * панели, служебные величины (средняя цена, объём, проскальзывание, комиссия)
+ * живут вторым планом в <QuoteSummary/>.
+ *
  * Ключевое правило: стакан, котировка, кнопка и подпись читают ОДИН и тот же
  * `outcome`. Отдельного «индекса исхода внутри панели» больше нет, поэтому
  * купить не то, что выбрано на странице, невозможно.
@@ -16,7 +21,7 @@
  * Вся математика спота — в @/lib/pricing (`quote`), деньги — в @/lib/store.
  */
 
-import { AlertTriangle, Lock, X } from "lucide-react";
+import { Lock, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 
@@ -24,11 +29,18 @@ import { AmountInput, type AmountChip } from "./amount-input";
 import { LeveragePanel } from "./leverage-panel";
 import { OrderBookPanel } from "./order-book-panel";
 import { isMarketTradable, OutcomeSelector, outcomeTone } from "./outcome-selector";
-import { QuoteSummary, translateTradeError, type PriceAlert } from "./quote-summary";
+import {
+  QuoteSummary,
+  TradeNotice,
+  translateTradeError,
+  type PriceAlert,
+} from "./quote-summary";
 import { ToastViewport, useToast } from "./toast";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Stat, StatRow } from "@/components/ui/stat";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { api, queryKeys, REFRESH } from "@/lib/api";
 import {
@@ -39,6 +51,7 @@ import {
 } from "@/lib/format";
 import {
   DEFAULT_FEE_BPS,
+  estimateReturn,
   quote,
   type Quote,
   type QuoteInput,
@@ -417,13 +430,18 @@ export function TradePanel({
     { label: "+$1", onClick: () => setAmountText(toField(amount + 1)) },
     { label: "+$20", onClick: () => setAmountText(toField(amount + 20)) },
     { label: "+$100", onClick: () => setAmountText(toField(amount + 100)) },
-    { label: "Max", onClick: () => setAmountText(toField(cash)), disabled: !hydrated },
+    {
+      label: "Max",
+      onClick: () => setAmountText(toField(cash)),
+      disabled: !hydrated,
+      strong: true,
+    },
   ];
 
   const sellChips: AmountChip[] = [
     { label: "25%", onClick: () => setSharesText(toSharesField(heldShares * 0.25)) },
     { label: "50%", onClick: () => setSharesText(toSharesField(heldShares * 0.5)) },
-    { label: "Max", onClick: () => setSharesText(toSharesField(heldShares)) },
+    { label: "Max", onClick: () => setSharesText(toSharesField(heldShares)), strong: true },
   ].map((chip) => ({ ...chip, disabled: !hydrated || heldShares <= EPS }));
 
   const headline = market?.groupTitle?.trim() || market?.question || event.title;
@@ -447,10 +465,19 @@ export function TradePanel({
   // Продавать нечего во всём событии — форма здесь бесполезна.
   const sellEmpty = side === "SELL" && hydrated && !hasAnyPosition;
 
+  /** Подзаголовок панели: чем именно она сейчас является. */
+  const kicker = leverageMode
+    ? "Плечевая сделка"
+    : side === "BUY"
+      ? "Покупка исхода"
+      : "Продажа позиции";
+
   return (
-    <div className={cn("flex flex-col gap-3", className)}>
-      <section className="rounded-xl border border-border bg-surface shadow-card">
-        <div className="border-b border-border p-2">
+    <div className={cn("flex flex-col gap-4", className)}>
+      {/* overflow-hidden здесь намеренно нет: подсказки <Hint/> должны выходить
+          за пределы карточки, иначе их обрезает по краю панели. */}
+      <section className="card">
+        <div className="border-b border-border px-3 py-3">
           <SegmentedControl
             items={MODE_ITEMS}
             value={mode}
@@ -459,29 +486,25 @@ export function TradePanel({
           />
         </div>
 
-        <header className="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-text">{headline}</p>
-            <p className="truncate text-[11px] text-muted">
-              {!tradable
-                ? "Торги закрыты"
-                : leverageMode
-                  ? "Плечевая торговля"
-                  : "Бумажная торговля"}
+        <header className="border-b border-border px-5 py-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="min-w-0 truncate text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
+              {kicker}
               {outcome ? ` · ${outcome.label}` : ""}
             </p>
+            {!tradable && <Badge tone="neutral">Торги закрыты</Badge>}
           </div>
-          {/* У плеча своя пара сторон — LONG/SHORT внутри <LeveragePanel/>. */}
-          {!leverageMode && (
-            <SegmentedControl items={SIDE_ITEMS} value={side} onChange={handleSide} />
-          )}
+          <h2 className="mt-1.5 line-clamp-2 text-[15px] font-semibold leading-[1.32] text-text">
+            {headline}
+          </h2>
         </header>
 
         {leverageMode ? (
           market && outcome ? (
             <>
-              <div className="px-3 pt-3">
+              <div className="px-5 pt-4">
                 <OutcomeSelector
+                  label="Исход"
                   markets={markets}
                   market={market}
                   outcomeIndex={outcomeIndex}
@@ -497,14 +520,14 @@ export function TradePanel({
             <EmptyState
               title="Исход недоступен"
               description="Плечо открывается по конкретному исходу, а торгуемых исходов у события нет."
-              className="py-9"
+              className="py-10"
             />
           )
         ) : sellEmpty ? (
           <EmptyState
             title="Нет позиций по этому событию"
             description="Продавать нечего: сначала купите исход — он появится здесь."
-            className="py-9"
+            className="py-10"
             action={
               <Button type="button" size="sm" onClick={() => handleSide("BUY")}>
                 Перейти к покупке
@@ -512,141 +535,157 @@ export function TradePanel({
             }
           />
         ) : (
-          <div className="space-y-3 p-3">
-            <OutcomeSelector
-              markets={pickerMarkets}
-              market={market}
-              outcomeIndex={outcomeIndex}
-              onSelect={select}
-              disabled={side === "BUY" && !tradable}
-              sellMode={sellMode}
-              heldByToken={heldByToken}
-              eventClosed={event.closed}
-            />
-
-            {!tradable && (
-              <div className="flex items-start gap-2 rounded-lg bg-surface-hover px-2.5 py-2 text-xs text-muted">
-                <Lock className="mt-px size-3.5 shrink-0" aria-hidden />
-                <p>
-                  Рынок не принимает заявки — купить нельзя.
-                  {heldShares > EPS
-                    ? " Продать позицию можно, пока в стакане есть заявки."
-                    : ""}
-                </p>
-              </div>
-            )}
-
-            {resolvedNotice && (
-              <div className="flex items-start gap-2 rounded-lg bg-[color:var(--warn)]/10 px-2.5 py-2 text-xs text-[color:var(--warn)]">
-                <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
-                <p>{resolvedNotice}</p>
-              </div>
-            )}
-
-            {limitPrice != null && (
-              <div className="flex items-center justify-between gap-2 rounded-lg bg-accent-soft px-2.5 py-1.5 text-xs text-accent">
-                <span>
-                  Лимитная цена{" "}
-                  <span className="tnum font-semibold">{formatCents(limitPrice)}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setLimitPrice(null)}
-                  aria-label="Сбросить лимитную цену"
-                  className="cursor-pointer rounded-md p-0.5 transition-opacity hover:opacity-70"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
-            )}
-
-            {side === "BUY" ? (
-              <AmountInput
-                mode="amount"
-                label="Сумма"
-                value={amountText}
-                onChange={setAmountText}
-                chips={buyChips}
-                disabled={!tradable}
-                invalid={disabledReason === "Недостаточно средств"}
-                hint={hydrated ? `Доступно ${formatMoney(cash)}` : undefined}
+          <>
+            <div className="space-y-4 p-5">
+              <SegmentedControl
+                items={SIDE_ITEMS}
+                value={side}
+                onChange={handleSide}
+                className="flex w-full [&>button]:flex-1"
               />
-            ) : (
-              <AmountInput
-                mode="shares"
-                label="Акций"
-                value={sharesText}
-                onChange={setSharesText}
-                chips={sellChips}
-                disabled={heldShares <= EPS}
-                invalid={disabledReason === "Недостаточно акций"}
-                hint={hydrated ? `В позиции ${formatCompact(heldShares)} акц.` : undefined}
+
+              <OutcomeSelector
+                label={sellMode ? "Что продаёте" : "Исход"}
+                markets={pickerMarkets}
+                market={market}
+                outcomeIndex={outcomeIndex}
+                onSelect={select}
+                disabled={side === "BUY" && !tradable}
+                sellMode={sellMode}
+                heldByToken={heldByToken}
+                eventClosed={event.closed}
               />
-            )}
 
-            <QuoteSummary
-              side={side}
-              quote={shownQuote}
-              loading={sizeEntered && bookPending}
-              estimatedPnl={estimatedPnl}
-              priceAlert={priceAlert}
-            />
-
-            <Button
-              type="button"
-              fullWidth
-              size="lg"
-              variant={tone}
-              disabled={Boolean(disabledReason)}
-              onClick={handleSubmit}
-              className={cn(
-                "h-12",
-                !disabledReason &&
-                  (tone === "no"
-                    ? "bg-no text-white hover:bg-no-hover"
-                    : "bg-yes text-white hover:bg-yes-hover"),
+              {!tradable && (
+                <div className="flex items-start gap-2 rounded-[12px] bg-bg-subtle px-3 py-2 text-[11.5px] leading-relaxed text-muted">
+                  <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <p>
+                    Рынок не принимает заявки — купить нельзя.
+                    {heldShares > EPS
+                      ? " Продать позицию можно, пока в стакане есть заявки."
+                      : ""}
+                  </p>
+                </div>
               )}
-            >
-              {disabledReason ?? submitLabel}
-            </Button>
 
-            <div className="space-y-1.5 border-t border-border pt-3 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted">Доступно</span>
-                {hydrated ? (
-                  <span className="tnum font-semibold text-text">{formatMoney(cash)}</span>
-                ) : (
-                  <Skeleton className="h-3.5 w-16" />
-                )}
-              </div>
+              {resolvedNotice && <TradeNotice>{resolvedNotice}</TradeNotice>}
 
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-muted">
-                  Позиция{outcome ? ` · ${outcome.label}` : ""}
-                </span>
-                {!hydrated ? (
-                  <Skeleton className="h-3.5 w-28" />
-                ) : position && heldShares > EPS ? (
-                  <span className="tnum flex items-center gap-1.5 font-medium text-text">
-                    <span>{formatCompact(heldShares)} акц.</span>
-                    <span className="text-faint">{formatCents(position.avgPrice)}</span>
-                    <span
-                      className={cn(
-                        "font-semibold",
-                        unrealized > 0 && "text-yes",
-                        unrealized < 0 && "text-no",
-                        unrealized === 0 && "text-faint",
-                      )}
-                    >
-                      {formatSignedMoney(unrealized)}
-                    </span>
+              {limitPrice != null && (
+                <div className="flex items-center justify-between gap-2 rounded-[12px] bg-accent-soft px-3 py-2 text-[11.5px] text-accent">
+                  <span>
+                    Лимитная цена{" "}
+                    <span className="tnum font-semibold">{formatCents(limitPrice)}</span>
                   </span>
-                ) : (
-                  <span className="text-faint">—</span>
+                  <button
+                    type="button"
+                    onClick={() => setLimitPrice(null)}
+                    aria-label="Сбросить лимитную цену"
+                    className="-m-1 cursor-pointer rounded-[8px] p-1 transition-opacity hover:opacity-70"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {side === "BUY" ? (
+                <AmountInput
+                  mode="amount"
+                  label="Сумма"
+                  value={amountText}
+                  onChange={setAmountText}
+                  chips={buyChips}
+                  disabled={!tradable}
+                  invalid={disabledReason === "Недостаточно средств"}
+                  hint={hydrated ? `Доступно ${formatMoney(cash)}` : undefined}
+                />
+              ) : (
+                <AmountInput
+                  mode="shares"
+                  label="Количество"
+                  value={sharesText}
+                  onChange={setSharesText}
+                  chips={sellChips}
+                  disabled={heldShares <= EPS}
+                  invalid={disabledReason === "Недостаточно акций"}
+                  hint={
+                    hydrated ? `В позиции ${formatCompact(heldShares)} акц.` : undefined
+                  }
+                />
+              )}
+
+              <QuoteSummary
+                side={side}
+                quote={shownQuote}
+                loading={sizeEntered && bookPending}
+                outcomeLabel={outcome?.label}
+                perDollar={outcome ? estimateReturn(outcome.price) : undefined}
+                estimatedPnl={estimatedPnl}
+                priceAlert={priceAlert}
+              />
+
+              <Button
+                type="button"
+                fullWidth
+                size="lg"
+                variant={tone}
+                disabled={Boolean(disabledReason)}
+                onClick={handleSubmit}
+                className={cn(
+                  "h-[52px] overflow-hidden rounded-[14px] text-[15px] font-semibold",
+                  // На заблокированной кнопке написана причина — её нельзя гасить
+                  // до полупрозрачного: opacity примитива здесь снимается.
+                  disabledReason
+                    ? "bg-bg-subtle text-muted ring-1 ring-inset ring-border disabled:opacity-100"
+                    : // В тёмной теме изумруд и роза светлые — подпись берёт цвет фона.
+                      tone === "no"
+                      ? "bg-no text-white hover:bg-no-hover dark:text-bg"
+                      : "bg-yes text-white hover:bg-yes-hover dark:text-bg",
                 )}
-              </div>
+              >
+                <span className="truncate">{disabledReason ?? submitLabel}</span>
+              </Button>
             </div>
-          </div>
+
+            <StatRow className="border-t border-border px-5 py-4">
+              <Stat
+                size="sm"
+                label="Доступно"
+                value={hydrated ? formatMoney(cash) : <Skeleton className="h-4 w-16" />}
+                hint="бумажный счёт"
+              />
+              <Stat
+                size="sm"
+                label={`Позиция${outcome ? ` · ${outcome.label}` : ""}`}
+                value={
+                  !hydrated ? (
+                    <Skeleton className="h-4 w-16" />
+                  ) : position && heldShares > EPS ? (
+                    `${formatCompact(heldShares)} акц.`
+                  ) : (
+                    "—"
+                  )
+                }
+                hint={
+                  hydrated && position && heldShares > EPS ? (
+                    <span className="tnum">
+                      {formatCents(position.avgPrice)} ·{" "}
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          unrealized > 0 && "text-yes",
+                          unrealized < 0 && "text-no",
+                        )}
+                      >
+                        {formatSignedMoney(unrealized)}
+                      </span>
+                    </span>
+                  ) : (
+                    "ничего не куплено"
+                  )
+                }
+              />
+            </StatRow>
+          </>
         )}
       </section>
 
