@@ -1,5 +1,6 @@
 import { HeroMarket } from "@/components/home/hero-market";
-import { MoversRail, moverTokenIds, pickMovers } from "@/components/home/movers-rail";
+import { MoversRail } from "@/components/home/movers-rail";
+import { moverTokenIds, pickMovers } from "@/components/home/movers";
 import { SectionHead, SectionLink } from "@/components/home/section-head";
 import { Container } from "@/components/layout/container";
 import { InfiniteMarketGrid } from "@/components/market/market-grid";

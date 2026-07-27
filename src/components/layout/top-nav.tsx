@@ -73,7 +73,7 @@ function CashPill() {
       className="flex h-9 shrink-0 items-center gap-2 rounded-full border border-border bg-surface px-3"
       title="Виртуальный баланс демо-счёта"
     >
-      <span className="hidden text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-faint md:block">
+      <span className="hidden text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-faint xl:block">
         баланс
       </span>
       <span className="tnum text-[13px] font-semibold leading-none text-text">
@@ -112,10 +112,10 @@ function DepositButton() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="Пополнить демо-счёт"
-        className="rounded-full px-2.5 sm:px-3.5"
+        className="rounded-full px-2.5 xl:px-3.5"
       >
         <Plus className="size-4" />
-        <span className="hidden sm:inline">Пополнить</span>
+        <span className="hidden xl:inline">Пополнить</span>
       </Button>
 
       {open && (
@@ -172,7 +172,7 @@ function NavPills() {
   return (
     <nav
       aria-label="Основные разделы"
-      className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-1 lg:flex"
+      className="hidden shrink-0 items-center gap-1 lg:flex"
     >
       {NAV_ITEMS.map((item) => {
         const active = isNavActive(pathname, item.href);
@@ -216,13 +216,17 @@ export function TopNav() {
     <>
       <header className="glass sticky top-0 z-40 border-b border-border">
         <Container>
-          {/* relative — центральная навигация центрируется по полосе, а не по остатку места */}
-          <div className="relative flex h-16 items-center gap-2 sm:gap-3">
-            <Logo />
+          {/* Три колонки в потоке, а не абсолютное центрирование: навигация
+              центрируется равными боковыми колонками и физически не может
+              оказаться под правым блоком на узких экранах. */}
+          <div className="flex h-16 items-center gap-2 sm:gap-3">
+            <div className="flex min-w-0 flex-1 items-center">
+              <Logo />
+            </div>
 
             <NavPills />
 
-            <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => setSearchOpen(true)}
@@ -230,12 +234,15 @@ export function TopNav() {
                 className={cn(
                   "group flex h-9 shrink-0 items-center gap-2 rounded-full border border-border bg-surface",
                   "text-[13px] text-faint transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-muted",
-                  "w-9 justify-center sm:w-auto sm:justify-start sm:pl-3.5 sm:pr-2",
+                  // Подпись и горячая клавиша появляются только там, где для
+                  // них правда есть место: между lg и xl правый блок и так
+                  // соседствует с центральной навигацией.
+                  "w-9 justify-center xl:w-auto xl:justify-start xl:pl-3.5 xl:pr-2",
                 )}
               >
                 <Search className="size-4 shrink-0" />
-                <span className="hidden sm:inline">Поиск</span>
-                <kbd className="tnum hidden rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium leading-none text-faint sm:inline-block">
+                <span className="hidden xl:inline">Поиск</span>
+                <kbd className="tnum hidden rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium leading-none text-faint xl:inline-block">
                   {isMac ? "⌘" : "Ctrl "}K
                 </kbd>
               </button>
