@@ -26,6 +26,7 @@ import { TradePanel } from "@/components/trade/trade-panel";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Side } from "@/lib/pricing";
 import type { Market, MarketEvent, Outcome } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 export interface EventViewProps {
   event: MarketEvent;
@@ -143,9 +144,18 @@ export function EventView({
         {/* Стакан рисует сама панель — так он гарантированно от того же
             исхода, по которому считается котировка. */}
         {/* id — цель быстрого перехода из шапки на узком экране. */}
+        {/* Прилипшая колонка выше экрана: панель сделки со стаканом не
+            помещается в видимую область, и без собственной прокрутки её низ —
+            вместе с кнопкой покупки — становится недостижим. Ограничиваем
+            высоту окном и прокручиваем внутри; цепочку к странице не рвём,
+            чтобы после конца панели колесо продолжало листать страницу. */}
         <aside
           id="trade"
-          className="min-w-0 self-start scroll-mt-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:sticky lg:top-20"
+          className={cn(
+            "thin-scrollbar min-w-0 self-start scroll-mt-20",
+            "lg:col-start-2 lg:row-span-2 lg:row-start-1",
+            "lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto lg:pr-1",
+          )}
         >
           <TradePanel
             event={event}

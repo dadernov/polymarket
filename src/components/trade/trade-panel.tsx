@@ -623,27 +623,40 @@ export function TradePanel({
                 priceAlert={priceAlert}
               />
 
-              <Button
-                type="button"
-                fullWidth
-                size="lg"
-                variant={tone}
-                disabled={Boolean(disabledReason)}
-                onClick={handleSubmit}
+              {/* Панель выше экрана и прокручивается внутри себя, поэтому
+                  главное действие закрепляем у её нижнего края: иначе до
+                  кнопки приходится доскроллить, а под ней ещё и стакан.
+                  Отрицательные отступы гасят padding карточки, чтобы полоска
+                  шла от края до края. */}
+              <div
                 className={cn(
-                  "h-[52px] overflow-hidden rounded-[14px] text-[15px] font-semibold",
-                  // На заблокированной кнопке написана причина — её нельзя гасить
-                  // до полупрозрачного: opacity примитива здесь снимается.
-                  disabledReason
-                    ? "bg-bg-subtle text-muted ring-1 ring-inset ring-border disabled:opacity-100"
-                    : // В тёмной теме изумруд и роза светлые — подпись берёт цвет фона.
-                      tone === "no"
-                      ? "bg-no text-white hover:bg-no-hover dark:text-bg"
-                      : "bg-yes text-white hover:bg-yes-hover dark:text-bg",
+                  "lg:sticky lg:bottom-0 lg:z-10 lg:-mx-5 lg:-mb-5",
+                  "lg:rounded-b-[16px] lg:border-t lg:border-border lg:bg-surface",
+                  "lg:px-5 lg:pb-5 lg:pt-3",
                 )}
               >
-                <span className="truncate">{disabledReason ?? submitLabel}</span>
-              </Button>
+                <Button
+                  type="button"
+                  fullWidth
+                  size="lg"
+                  variant={tone}
+                  disabled={Boolean(disabledReason)}
+                  onClick={handleSubmit}
+                  className={cn(
+                    "h-[52px] overflow-hidden rounded-[14px] text-[15px] font-semibold",
+                    // На заблокированной кнопке написана причина — её нельзя гасить
+                    // до полупрозрачного: opacity примитива здесь снимается.
+                    disabledReason
+                      ? "bg-bg-subtle text-muted ring-1 ring-inset ring-border disabled:opacity-100"
+                      : // В тёмной теме изумруд и роза светлые — подпись берёт цвет фона.
+                        tone === "no"
+                        ? "bg-no text-white hover:bg-no-hover dark:text-bg"
+                        : "bg-yes text-white hover:bg-yes-hover dark:text-bg",
+                  )}
+                >
+                  <span className="truncate">{disabledReason ?? submitLabel}</span>
+                </Button>
+              </div>
             </div>
 
             <StatRow className="border-t border-border px-5 py-4">
