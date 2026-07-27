@@ -73,7 +73,7 @@ function CashPill() {
       className="flex h-9 shrink-0 items-center gap-2 rounded-full border border-border bg-surface px-3"
       title="Виртуальный баланс демо-счёта"
     >
-      <span className="hidden text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-faint xl:block">
+      <span className="hidden text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-faint 2xl:block">
         баланс
       </span>
       <span className="tnum text-[13px] font-semibold leading-none text-text">
@@ -112,10 +112,10 @@ function DepositButton() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="Пополнить демо-счёт"
-        className="rounded-full px-2.5 xl:px-3.5"
+        className="rounded-full px-2.5 2xl:px-3.5"
       >
         <Plus className="size-4" />
-        <span className="hidden xl:inline">Пополнить</span>
+        <span className="hidden 2xl:inline">Пополнить</span>
       </Button>
 
       {open && (
@@ -237,12 +237,12 @@ export function TopNav() {
                   // Подпись и горячая клавиша появляются только там, где для
                   // них правда есть место: между lg и xl правый блок и так
                   // соседствует с центральной навигацией.
-                  "w-9 justify-center xl:w-auto xl:justify-start xl:pl-3.5 xl:pr-2",
+                  "w-9 justify-center 2xl:w-auto 2xl:justify-start 2xl:pl-3.5 2xl:pr-2",
                 )}
               >
                 <Search className="size-4 shrink-0" />
-                <span className="hidden xl:inline">Поиск</span>
-                <kbd className="tnum hidden rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium leading-none text-faint xl:inline-block">
+                <span className="hidden 2xl:inline">Поиск</span>
+                <kbd className="tnum hidden rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium leading-none text-faint 2xl:inline-block">
                   {isMac ? "⌘" : "Ctrl "}K
                 </kbd>
               </button>
