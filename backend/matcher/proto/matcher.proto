@@ -1,0 +1,65 @@
+// matcher/proto/matcher.proto
+syntax = "proto3";
+
+package matcher.v1;
+
+// Go-пакет, в который сгенерится код.
+option go_package = "predmarket/matcher/gen/matcherv1;matcherv1";
+
+// Дверь матчинг-движка. Снаружи видны только эти методы.
+service Matcher {
+  // Подать заявку. Вернёт список сделок, которые она вызвала.
+  rpc Submit(SubmitRequest) returns (SubmitResponse);
+
+  // Отменить заявку по ID.
+  rpc Cancel(CancelRequest) returns (CancelResponse);
+
+  // Поток сделок: клиент подписывается и получает каждую новую сделку.
+  rpc StreamFills(StreamFillsRequest) returns (stream Fill);
+}
+
+// Как заявка приходит СНАРУЖИ — в терминах ДА/НЕТ и купить/продать.
+// Конвертацию "купить NO -> продать YES" делает сервер через нашу Normalize.
+enum Outcome {
+  OUTCOME_YES = 0;
+  OUTCOME_NO = 1;
+}
+
+enum Intent {
+  INTENT_BUY = 0;
+  INTENT_SELL = 1;
+}
+
+message SubmitRequest {
+  uint64 order_id = 1;
+  string market_id = 2;
+  Outcome outcome = 3;
+  Intent intent = 4;
+  uint32 price = 5;   // цена в тиках: 1 тик = $0.01, диапазон 0..100
+  uint64 qty = 6;     // объём в единицах коллатерала (6 знаков)
+  string owner = 7;
+}
+
+message SubmitResponse {
+  repeated Fill fills = 1; // список сделок; пусто — заявка просто встала в стакан
+}
+
+message CancelRequest {
+  uint64 order_id = 1;
+}
+
+message CancelResponse {
+  bool cancelled = 1;
+}
+
+message StreamFillsRequest {
+  string market_id = 1; // на какой рынок подписаться
+}
+
+message Fill {
+  uint64 maker_id = 1;
+  uint64 taker_id = 2;
+  string market_id = 3;
+  uint32 price = 4;
+  uint64 qty = 5;
+}

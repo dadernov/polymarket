@@ -32,6 +32,7 @@ import {
   leverageDistanceToKnockout,
   leveragePositionPnl,
   leveragePositionReturnPct,
+  leveragePositionTariff,
   useLeverage,
   useLeverageHydrated,
   type LeveragePosition,
@@ -42,9 +43,12 @@ import { cn, eventHref } from "@/lib/utils";
 /** Стабильная пустышка: до гидратации показывать сохранённое нельзя. */
 const NO_POSITIONS: LeveragePosition[] = [];
 
-/** Ближе этого расстояния до нокаута строку подсвечиваем. */
+/** Ближе этого расстояния до нокаута строку подсвечиваем (в долях цены). */
 const DANGER_POINTS = 0.02;
 const WARN_POINTS = 0.05;
+
+const TARIFF_HINT =
+  "Разовый тариф, уплаченный при открытии: стоимость капитала пула, гэп-премия за риск прыжка цены через нокаут и комиссия платформы. Он уже списан со счёта и учтён в P&L.";
 
 /** Шкала полосы риска: на этом расстоянии от нокаута полоса пуста. */
 const RISK_SPAN = 0.1;
@@ -62,10 +66,22 @@ function formatLeverage(value: number): string {
   return `${Number.isInteger(value) ? value : value.toFixed(1)}x`;
 }
 
-/** Расстояние до нокаута — в процентных пунктах цены. */
-function formatPoints(distance: number): string {
+/**
+ * Расстояние до нокаута — в тиках: цена в плечевой модели ходит целыми
+ * центами, и «20 тиков» — это ровно то, что считает движок.
+ */
+function formatTicks(distance: number): string {
   if (!Number.isFinite(distance)) return "—";
-  return `${(Math.abs(distance) * 100).toFixed(1)} п.п.`;
+  const n = Math.round(Math.abs(distance) * 100);
+  const tail = n % 10;
+  const teen = n % 100;
+  const word =
+    tail === 1 && teen !== 11
+      ? "тик"
+      : tail >= 2 && tail <= 4 && (teen < 12 || teen > 14)
+        ? "тика"
+        : "тиков";
+  return `${n} ${word}`;
 }
 
 function pnlTone(pnl: number): string {
@@ -252,18 +268,23 @@ export function LeverageTable() {
               Открытые позиции
               <span className="tnum ml-1.5 text-muted">{live.length}</span>
             </p>
-            <span className="flex items-center gap-1.5 text-[11px] text-faint">
-              Убыток ограничен маржой
-              <Hint side="bottom">
-                Нокаут — цена, на которой позиция закрывается принудительно, а
-                маржа списывается полностью. Возврат цены обратно её уже не
-                восстанавливает.
-              </Hint>
+            <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-faint">
+              <span className="flex items-center gap-1.5">
+                Убыток ограничен маржой
+                <Hint side="bottom">
+                  Нокаут — цена, на которой позиция гаснет, а маржа списывается
+                  полностью. Возврат цены обратно её уже не восстанавливает.
+                </Hint>
+              </span>
+              <span className="flex items-center gap-1.5">
+                Тариф уплачен вперёд
+                <Hint side="bottom">{TARIFF_HINT}</Hint>
+              </span>
             </span>
           </header>
 
           <div className="thin-scrollbar overflow-x-auto">
-            <table className="w-full min-w-[1060px] border-collapse text-sm">
+            <table className="w-full min-w-[1160px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className={cn(TH, "text-left")}>Рынок</th>
@@ -274,6 +295,7 @@ export function LeverageTable() {
                   <th className={cn(TH, "text-right")}>Нокаут</th>
                   <th className={cn(TH, "text-right")}>До нокаута</th>
                   <th className={cn(TH, "text-right")}>Маржа</th>
+                  <th className={cn(TH, "text-right")}>Тариф</th>
                   <th className={cn(TH, "text-right")}>P&L</th>
                   <th className={cn(TH, "text-right")} aria-label="Действие" />
                 </tr>
@@ -285,6 +307,7 @@ export function LeverageTable() {
                   const pnl = leveragePositionPnl(position, price);
                   const pct = leveragePositionReturnPct(position, price);
                   const distance = leverageDistanceToKnockout(position, price);
+                  const tariff = leveragePositionTariff(position);
                   const reachable =
                     position.knockoutPrice > 0 && position.knockoutPrice < 1;
 
@@ -324,12 +347,15 @@ export function LeverageTable() {
                             reachable && distance > WARN_POINTS && "text-muted",
                           )}
                         >
-                          {reachable ? formatPoints(distance) : "недостижим"}
+                          {reachable ? formatTicks(distance) : "недостижим"}
                         </div>
                         {reachable && <RiskBar distance={distance} />}
                       </td>
                       <td className="tnum px-4 py-3.5 text-right text-muted">
                         {formatMoney(position.margin)}
+                      </td>
+                      <td className="tnum px-4 py-3.5 text-right text-muted">
+                        {tariff > 0 ? formatMoney(tariff) : "—"}
                       </td>
                       <td className="px-4 py-3.5 text-right">
                         <div className={cn("tnum font-semibold", pnlTone(pnl))}>
@@ -366,7 +392,7 @@ export function LeverageTable() {
               <span className="tnum ml-1.5 text-muted">{burned.length}</span>
             </p>
             <p className="text-[11px] text-faint">
-              Маржа списана полностью — возврат цены их не восстанавливает
+              Маржа и тариф списаны полностью — возврат цены их не восстанавливает
             </p>
           </header>
 
@@ -397,7 +423,14 @@ export function LeverageTable() {
                       </div>
                     </td>
                     <td className="tnum px-4 py-3.5 text-right font-semibold text-no">
-                      {formatSignedMoney(-position.margin)}
+                      {formatSignedMoney(
+                        -(position.margin + leveragePositionTariff(position)),
+                      )}
+                      {leveragePositionTariff(position) > 0 && (
+                        <div className="text-[11px] font-normal text-faint">
+                          в т.ч. тариф {formatMoney(leveragePositionTariff(position))}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3.5 text-right">
                       <Button

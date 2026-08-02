@@ -5,6 +5,10 @@
  * окажется равна X. Ничего не считает сам — форму кривой целиком задаёт
  * `pnlAt` из quoteLeverage, поэтому график и цифры в панели не разъедутся.
  *
+ * Сетка идёт по тикам: в их модели цена ходит целыми центами, промежуточных
+ * значений не существует, и узлы кривой должны лежать там же. Между тиками
+ * P&L линеен, поэтому прямые отрезки — не упрощение, а точная форма.
+ *
  * Заливка режется по нулю: выше — изумруд, ниже — роза. Точку разреза задаёт
  * градиент, а не два отдельных ряда, иначе на изломе появляется щель.
  * Линии сетки и рамки — токен `grid`, они должны быть слабее любой подписи.
@@ -23,12 +27,12 @@ import {
 import type { TooltipContentProps } from "recharts";
 
 import { formatCents, formatMoney, formatSignedMoney } from "@/lib/format";
+import type { LeverageSide } from "@/lib/pricing/leverage";
+import { TICK_SIZE } from "@/lib/pricing/ticks";
 import { cn } from "@/lib/utils";
 
-export type LeverageSide = "LONG" | "SHORT";
-
-/** Шаг сетки по цене: 200 точек рисуют излом нокаута без ступенек. */
-const STEP = 0.005;
+/** Шаг сетки по цене — один тик ($0.01). */
+const STEP = TICK_SIZE;
 
 interface PayoffPoint {
   price: number;
@@ -133,10 +137,15 @@ export interface PayoffChartProps {
   /** Цена входа 0..1 — тонкая вертикаль для ориентира. */
   entryPrice: number;
   /**
-   * Цена, на которой маржа обнуляется. У шорта с малым плечом она бывает
-   * больше 1 — тогда нокаут недостижим и вертикали на графике нет.
+   * Цена, на которой маржа исчерпана. Если нокаут лёг на границу диапазона
+   * (0 или 100 тиков), коснуться его цена не может — вертикали на графике нет.
    */
   knockoutPrice: number;
+  /**
+   * Цена, на которой позиция отбивает уплаченный вперёд тариф. Ноль кривой
+   * лежит именно здесь, а не на цене входа. null — если считать не от чего.
+   */
+  breakEvenPrice?: number | null;
   /** P&L позиции при заданной цене исхода (обычно `quote.pnlAt`). */
   pnlAt: (price: number) => number;
   height?: number;
@@ -147,6 +156,7 @@ export function PayoffChart({
   side,
   entryPrice,
   knockoutPrice,
+  breakEvenPrice = null,
   pnlAt,
   height = 168,
   className,
@@ -154,10 +164,12 @@ export function PayoffChart({
   const entry = clamp01(entryPrice);
   const knockout = safe(knockoutPrice);
   const knockoutVisible = knockout > 0 && knockout < 1;
+  const breakEven = breakEvenPrice == null ? null : safe(breakEvenPrice);
+  const breakEvenVisible = breakEven != null && breakEven > 0 && breakEven < 1;
 
   const points = useMemo(
-    () => buildPoints(pnlAt, [entry, knockout]),
-    [pnlAt, entry, knockout],
+    () => buildPoints(pnlAt, [entry, knockout, breakEven ?? 0]),
+    [pnlAt, entry, knockout, breakEven],
   );
 
   const gradientId = useId();
@@ -225,6 +237,9 @@ export function PayoffChart({
               strokeDasharray="2 4"
               strokeWidth={1}
             />
+            {breakEvenVisible && (
+              <ReferenceLine x={breakEven} stroke="var(--accent)" strokeDasharray="1 3" />
+            )}
             {knockoutVisible && (
               <ReferenceLine
                 x={knockout}
@@ -272,6 +287,12 @@ export function PayoffChart({
           </span>
         ) : (
           <span>Нокаут недостижим</span>
+        )}
+        {breakEvenVisible && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-px w-4 border-t border-dotted border-accent" />
+            Безубыток <span className="tnum text-accent">{formatCents(breakEven)}</span>
+          </span>
         )}
         <span>{side === "LONG" ? "Прибыль при росте" : "Прибыль при падении"}</span>
       </div>

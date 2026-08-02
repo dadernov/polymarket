@@ -39,3 +39,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# backend/ — исходники бэкенда заказчика: версионируем код, не артефакты сборки
+# foundry
+/backend/contracts/lib/
+/backend/contracts/out/
+/backend/contracts/cache/
+/backend/contracts/broadcast/
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+# go: собранные бинарники матчера
+/backend/matcher/bin/
+/backend/matcher/matcher
+/backend/matcher/democlient

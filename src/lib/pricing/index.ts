@@ -57,11 +57,78 @@ export {
 } from "./types";
 
 export { orderBookEngine } from "./orderbook-engine";
-export { createLmsrEngine, type LmsrConfig } from "./lmsr";
 
-/** Плечевые («турбо») позиции — своя точка подмены, см. ./leverage. */
+/**
+ * Маркет-мейкер Хэнсона — порт бэкенда (services/robot/lmsr.py). Это не
+ * `PricingEngine`: у него своя, более узкая роль — робот-маркетмейкер,
+ * который держит цену на пустом рынке.
+ */
+export { LMSR, PRICE_CEIL, PRICE_FLOOR, type LmsrOutcome } from "./lmsr";
+
+/* ------------------------------------------------------------------ */
+/* Плечевой слой — порт services/leverage/*                            */
+/* ------------------------------------------------------------------ */
+
+/** Тиковая модель: цена 0..1 ⇄ целые тики 0..100. */
+export {
+  clampTicks,
+  isEntryTick,
+  ONE,
+  priceToTicks,
+  roundHalfEven,
+  TICK_SIZE,
+  ticksToPrice,
+} from "./ticks";
+
+/** Ядро нокаута: те же формулы, что в knockout.py. */
+export {
+  isKnockedOut,
+  LeverageError,
+  LONG,
+  MAX_LEVERAGE,
+  MIN_LEVERAGE_EXCLUSIVE,
+  openPosition,
+  SHORT,
+  type Direction,
+  type LeverageErrorCode,
+  type OpenPositionArgs,
+  type Position,
+} from "./knockout";
+
+/** λ/J: шов под калибровку, сегодня — статическая таблица живого рынка. */
+export {
+  LAMBDA_J_TABLE,
+  StaticLambdaJSource,
+  staticLambdaJSource,
+  type LambdaJ,
+  type LambdaJSource,
+} from "./lambda-source";
+
+/** Тариф: капитал + гэп-премия + маржа платформы. */
+export {
+  barrierTicks,
+  DEFAULT_TARIFF,
+  EMPTY_TARIFF,
+  pricePosition,
+  roundTariff,
+  type TariffBreakdown,
+  type TariffConfig,
+} from "./tariff";
+
+/** Лимиты пула в терминах максимальной выплаты, с неттингом лонг/шорт. */
+export {
+  DEFAULT_POOL_SHARES,
+  Exposure,
+  poolLimits,
+  PoolRiskEngine,
+  type PoolLimits,
+  type PoolVerdict,
+} from "./pool-risk";
+
+/** Фасад для UI: котировка плечевой позиции и переоценка открытой. */
 export {
   emptyLeverageQuote,
+  isKnockedOutAtPrice,
   knockoutPriceFor,
   LEVERAGE_DEFAULTS,
   leveragePnlAt,
@@ -71,9 +138,9 @@ export {
   type LeverageConfig,
   type LeveragePnlArgs,
   type LeverageQuote,
+  type LeverageQuoteErrorCode,
   type LeverageQuoteInput,
   type LeverageSide,
-  type MaxLeverageArgs,
 } from "./leverage";
 
 /** ⬇⬇⬇ ЕДИНСТВЕННАЯ СТРОКА, КОТОРУЮ НУЖНО ПОМЕНЯТЬ ПРИ ЗАМЕНЕ МАТЕМАТИКИ. */

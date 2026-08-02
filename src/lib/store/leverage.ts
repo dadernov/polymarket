@@ -6,9 +6,15 @@
  *
  * ── Кошелёк ────────────────────────────────────────────────────────────
  * Денежный баланс в приложении ОДИН — `usePortfolio.cash`. Отдельного
- * кошелька для плеча нет: `openPosition` списывает маржу из портфеля,
- * `closePosition` возвращает маржу вместе с P&L. Сгоревшая позиция не
+ * кошелька для плеча нет: `openPosition` списывает маржу ВМЕСТЕ с тарифом,
+ * `closePosition` возвращает маржу и движение цены. Сгоревшая позиция не
  * возвращает ничего — маржа и есть максимальный убыток.
+ *
+ * ── Тариф ──────────────────────────────────────────────────────────────
+ * Ни спреда, ни ежедневного финансирования в их модели нет: игрок платит
+ * РАЗОВЫЙ тариф при открытии (капитал + гэп-премия + платформа). Он списан
+ * вперёд, поэтому хранится в позиции и вычитается из её P&L, а на счёт при
+ * закрытии возвращается маржа плюс «грязный» результат движения цены.
  *
  * ── SSR и гидратация ───────────────────────────────────────────────────
  * Устроено ровно как в portfolio.ts: `skipHydration: true`, первый рендер
@@ -23,12 +29,9 @@
 import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import {
-  LEVERAGE_DEFAULTS,
-  leveragePnlAt,
-  quoteLeverage,
-  type LeverageSide,
-} from "@/lib/pricing/leverage";
+import { leveragePnlAt, quoteLeverage, type LeverageSide } from "@/lib/pricing/leverage";
+import { Exposure, poolLimits, PoolRiskEngine } from "@/lib/pricing/pool-risk";
+import { priceToTicks } from "@/lib/pricing/ticks";
 import { usePortfolioStore } from "./portfolio";
 
 export type { LeverageSide } from "@/lib/pricing/leverage";
@@ -51,12 +54,17 @@ export interface LeveragePosition {
   entryPrice: number;
   tokens: number;
   knockoutPrice: number;
+  /**
+   * Разовый тариф, уплаченный при открытии. Поле необязательное: позиции,
+   * сохранённые до появления тарифа, читаются как ноль и не ломают гидратацию.
+   */
+  tariffPaid?: number;
   openedAt: number;
   /** Заполняется при сгорании позиции. */
   knockedOutAt: number | null;
 }
 
-/** Метаданные рынка + параметры сделки. Комиссии — из LEVERAGE_DEFAULTS. */
+/** Метаданные рынка + параметры сделки. Тариф считает движок. */
 export interface OpenLeverageArgs {
   eventSlug: string;
   eventTitle: string;
@@ -69,11 +77,8 @@ export interface OpenLeverageArgs {
   margin: number;
   leverage: number;
   entryPrice: number;
-  /** Принимается ради симметрии с TradeArgs портфеля, в позиции не хранится. */
+  /** id рынка для лимитов пула; по умолчанию `conditionId`. */
   marketId?: string;
-  tickSize?: number;
-  spreadBps?: number;
-  fundingBpsPerDay?: number;
 }
 
 export interface LeverageResult {
@@ -115,11 +120,75 @@ function makeId(): string {
   return `lev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Цена достигла нокаута — позиция сгорела. */
+/**
+ * Цена достигла нокаута — позиция сгорела. Сравнение целочисленное, в тиках:
+ * у их модели цена ходит только центами, и 20.4¢ — это тик 20, то есть касание
+ * нокаута на 20, а не «чуть выше него».
+ */
 function isKnockedOut(position: LeveragePosition, price: number): boolean {
   const knockout = num(position.knockoutPrice, -1);
   if (!(knockout >= 0)) return false;
-  return position.side === "LONG" ? price <= knockout : price >= knockout;
+  const tick = priceToTicks(price);
+  const knockoutTick = priceToTicks(knockout);
+  return position.side === "LONG" ? tick <= knockoutTick : tick >= knockoutTick;
+}
+
+/** Уплаченный вперёд тариф. У старых сохранённых позиций его нет — это ноль. */
+export function leveragePositionTariff(position: LeveragePosition): number {
+  return Math.max(0, num(position?.tariffPaid));
+}
+
+/**
+ * Обязательство пула по позиции — их `max_payout`. Не хранится: восстановить
+ * из размера и цены входа точнее, чем плодить поле, которого нет у старых
+ * записей (LONG: size×(1−p0), SHORT: size×p0).
+ */
+export function leveragePositionMaxPayout(position: LeveragePosition): number {
+  if (!position) return 0;
+  const tokens = Math.max(0, num(position.tokens));
+  const entry = clamp01(num(position.entryPrice));
+  return position.side === "LONG" ? tokens * (1 - entry) : tokens * entry;
+}
+
+/* ------------------------------------------------------------------ */
+/* Пул                                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * КАПИТАЛ ПУЛА — ЗАГЛУШКА. Настоящий пул живёт в контракте и знает свой TVL;
+ * до появления сервера фронт считает лимиты от этого числа, иначе вердикт
+ * «позиция принята» ничего бы не значил. Отсюда: ≤3% ($7 500) обязательств на
+ * один рынок, ≤10% на кластер связанных рынков, ≤30% на весь пул.
+ */
+export const POOL_CAPITAL = 250_000;
+
+/**
+ * Риск-движок пула, заряженный уже открытыми позициями. Пустой движок пропускал
+ * бы всё подряд, а с наполнением видно и неттинг: встречный шорт по тому же
+ * рынку уменьшает перекос и освобождает лимит.
+ *
+ * Кластеров на фронте нет — каждый рынок сам себе кластер, ровно как в их
+ * `pool_risk.py` при пустом словаре `clusters`.
+ */
+export function leveragePool(
+  positions: Record<string, LeveragePosition> | LeveragePosition[],
+): PoolRiskEngine {
+  const engine = new PoolRiskEngine(poolLimits(POOL_CAPITAL));
+  const list = Array.isArray(positions) ? positions : Object.values(positions ?? {});
+
+  for (const position of list) {
+    if (!position || position.knockedOutAt != null) continue;
+    const marketId = position.conditionId;
+    if (!marketId) continue;
+
+    const exposure = engine.exposure.get(marketId) ?? new Exposure();
+    const payout = leveragePositionMaxPayout(position);
+    if (position.side === "LONG") exposure.longPayout += payout;
+    else exposure.shortPayout += payout;
+    engine.exposure.set(marketId, exposure);
+  }
+
+  return engine;
 }
 
 /* ------------------------------------------------------------------ */
@@ -167,12 +236,17 @@ export const useLeverageStore = create<LeverageState>()(
           entryPrice: num(args.entryPrice),
           margin: num(args.margin),
           leverage: num(args.leverage),
-          tickSize: num(args.tickSize, 0.01),
-          spreadBps: num(args.spreadBps, LEVERAGE_DEFAULTS.spreadBps),
-          fundingBpsPerDay: num(args.fundingBpsPerDay, LEVERAGE_DEFAULTS.fundingBpsPerDay),
+          marketId: args.marketId ?? args.conditionId,
+          // Тот же движок, что показывает вердикт в панели: разрешить здесь
+          // то, что там помечено отказом, значило бы врать в интерфейсе.
+          pool: leveragePool(get().positions),
         });
         if (quote.error) return { ok: false, error: quote.error };
-        if (quote.margin > portfolioCash() + EPS) {
+        if (quote.pool && !quote.pool.ok) return { ok: false, error: quote.pool.reason };
+
+        // Тариф списывается вперёд вместе с маржой — денег нужно на оба.
+        const charge = quote.margin + quote.tariff.total;
+        if (charge > portfolioCash() + EPS) {
           return { ok: false, error: "Insufficient balance" };
         }
 
@@ -193,11 +267,12 @@ export const useLeverageStore = create<LeverageState>()(
           entryPrice: quote.entryPrice,
           tokens: quote.tokens,
           knockoutPrice: quote.knockoutPrice,
+          tariffPaid: quote.tariff.total,
           openedAt: now,
           knockedOutAt: null,
         };
 
-        addPortfolioCash(-quote.margin);
+        addPortfolioCash(-charge);
         set({ positions: { ...get().positions, [id]: position } });
         return { ok: true, id };
       },
@@ -217,11 +292,15 @@ export const useLeverageStore = create<LeverageState>()(
         // Сгоревшая позиция уже списана в realized — закрытие лишь убирает её.
         if (position.knockedOutAt != null) {
           set({ positions });
-          return { ok: true, id, pnl: -Math.max(0, num(position.margin)) };
+          return {
+            ok: true,
+            id,
+            pnl: -(Math.max(0, num(position.margin)) + leveragePositionTariff(position)),
+          };
         }
 
         const pnl = leveragePositionPnl(position, value);
-        const credited = Math.max(0, num(position.margin) + pnl);
+        const credited = leveragePositionValue(position, value);
         if (credited > 0) addPortfolioCash(credited);
         set({ positions, realized: state.realized + pnl });
         return { ok: true, id, pnl };
@@ -234,7 +313,7 @@ export const useLeverageStore = create<LeverageState>()(
         const state = get();
         const now = Date.now();
         let positions: Record<string, LeveragePosition> | null = null;
-        let burnedMargin = 0;
+        let burned = 0;
         let count = 0;
 
         for (const position of Object.values(state.positions)) {
@@ -245,13 +324,14 @@ export const useLeverageStore = create<LeverageState>()(
 
           positions = positions ?? { ...state.positions };
           positions[position.id] = { ...position, knockedOutAt: now };
-          burnedMargin += Math.max(0, num(position.margin));
+          // Сгорает маржа целиком, а тариф уже был уплачен — убыток из обоих.
+          burned += Math.max(0, num(position.margin)) + leveragePositionTariff(position);
           count += 1;
         }
 
         // Ничего не изменилось — не дёргаем подписчиков (метод зовут из эффекта).
         if (!positions) return 0;
-        set({ positions, realized: state.realized - burnedMargin });
+        set({ positions, realized: state.realized - burned });
         return count;
       },
 
@@ -307,14 +387,14 @@ export function useLeverageHydrated(): boolean {
 /* ------------------------------------------------------------------ */
 
 /**
- * P&L позиции при текущей цене. Сгоревшая позиция всегда стоит −margin и
- * больше не переоценивается. Спред и финансирование сюда не входят: они
- * показываются в тикете открытия (@/lib/pricing/leverage).
+ * P&L позиции при текущей цене — ЧИСТЫЙ, за вычетом уплаченного тарифа.
+ * Сгоревшая позиция всегда стоит −(маржа + тариф) и больше не переоценивается.
  */
 export function leveragePositionPnl(position: LeveragePosition, currentPrice: number): number {
   if (!position) return 0;
   const margin = Math.max(0, num(position.margin));
-  if (position.knockedOutAt != null) return -margin;
+  const costs = leveragePositionTariff(position);
+  if (position.knockedOutAt != null) return -(margin + costs);
 
   return leveragePnlAt({
     side: position.side,
@@ -323,13 +403,19 @@ export function leveragePositionPnl(position: LeveragePosition, currentPrice: nu
     margin,
     knockoutPrice: num(position.knockoutPrice),
     price: num(currentPrice, num(position.entryPrice)),
+    costs,
   });
 }
 
-/** Сколько вернётся на счёт при закрытии по этой цене: маржа + P&L, не меньше 0. */
+/**
+ * Сколько вернётся на счёт при закрытии по этой цене. Тариф списан ещё при
+ * открытии, поэтому обратно идёт маржа плюс «грязное» движение цены — то есть
+ * чистый P&L, в который тариф возвращён обратно. Не меньше нуля: долга нет.
+ */
 export function leveragePositionValue(position: LeveragePosition, currentPrice: number): number {
   if (!position) return 0;
-  return Math.max(0, num(position.margin) + leveragePositionPnl(position, currentPrice));
+  const pnl = leveragePositionPnl(position, currentPrice);
+  return Math.max(0, num(position.margin) + pnl + leveragePositionTariff(position));
 }
 
 /** P&L в долях от внесённой маржи (0.25 = +25%). */
@@ -364,8 +450,10 @@ export interface LeverageTotals {
   exposure: number;
   /** Заёмная часть экспозиции. */
   borrowed: number;
+  /** Тариф, уплаченный вперёд по живым позициям. */
+  tariff: number;
   unrealized: number;
-  /** Что вернётся при закрытии всего: маржа + P&L. */
+  /** Что вернётся при закрытии всего: маржа + движение цены. */
   value: number;
   /** Маржа, потерянная на нокаутах. */
   knockedOutMargin: number;
@@ -386,6 +474,7 @@ export function leverageTotals(
     margin: 0,
     exposure: 0,
     borrowed: 0,
+    tariff: 0,
     unrealized: 0,
     value: 0,
     knockedOutMargin: 0,
@@ -409,9 +498,12 @@ export function leverageTotals(
     totals.margin += margin;
     totals.exposure += exposure;
     totals.borrowed += Math.max(0, exposure - margin);
+    totals.tariff += leveragePositionTariff(position);
     totals.unrealized += leveragePositionPnl(position, price);
   }
 
-  totals.value = Math.max(0, totals.margin + totals.unrealized);
+  // Тариф уже ушёл со счёта при открытии — в возврат он входит обратно,
+  // иначе стоимость портфеля вычла бы его дважды.
+  totals.value = Math.max(0, totals.margin + totals.unrealized + totals.tariff);
   return totals;
 }
